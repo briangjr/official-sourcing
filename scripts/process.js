@@ -23,6 +23,7 @@
 import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
 import Anthropic from "@anthropic-ai/sdk";
+import { checkCheckoutPrice } from "./checkoutCheck.js";
 
 const {
   SHEET_ID,
@@ -31,10 +32,12 @@ const {
   ANTHROPIC_API_KEY,
   BATCH_SIZE = "10",
   DAILY_CAP = "100",
+  RUN_COUNT = "1",
 } = process.env;
 
 const batchSize = parseInt(BATCH_SIZE, 10);
 const dailyCap = parseInt(DAILY_CAP, 10);
+const runCount = Math.max(1, parseInt(RUN_COUNT, 10) || 1);
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -77,7 +80,21 @@ async function loadSheet() {
       'Could not find a tab named "Sheet1". Check the tab name matches exactly.'
     );
   }
-  return sheet;
+  return { doc, sheet };
+}
+
+// Reads your list of known/go-to coupon codes from a second tab called
+// "CouponCodes" (one code per row, column A). Optional - if the tab doesn't
+// exist or is empty, checkout verification still runs, it just won't have
+// codes to try and will report that in the notes.
+async function loadKnownCodes(doc) {
+  const tab = doc.sheetsByTitle["CouponCodes"];
+  if (!tab) return [];
+  const rows = await tab.getRows();
+  return rows
+    .map((r) => (r._rawData && r._rawData[0]) || "")
+    .map((c) => c.trim())
+    .filter(Boolean);
 }
 
 // Ask Claude to search the web and return a structured result for one product.
@@ -142,8 +159,9 @@ visible. Note if a deal looks time-limited.`;
 }
 
 async function main() {
-  const sheet = await loadSheet();
+  const { doc, sheet } = await loadSheet();
   const rows = await sheet.getRows();
+  const knownCodes = await loadKnownCodes(doc);
 
   const today = todayStr();
   const doneToday = rows.filter(
@@ -169,8 +187,12 @@ async function main() {
       return pb - pa;
     });
 
-  const thisRunLimit = Math.min(batchSize, remainingToday);
+  const thisRunLimit = Math.min(batchSize * runCount, remainingToday);
   const batch = pending.slice(0, thisRunLimit);
+
+  if (runCount > 1) {
+    console.log(`Run Ten Times mode: processing up to ${thisRunLimit} rows in this single run.`);
+  }
 
   if (batch.length === 0) {
     console.log("No pending rows to process.");
@@ -193,6 +215,26 @@ async function main() {
       row.set("Deal Type", result.deal_type ?? "none");
       row.set("Confidence", result.confidence ?? "low");
       row.set("Notes", result.notes ?? "");
+
+      // Second pass: if the search step found a promising lead (a coupon or
+      // sale, with an actual link to check), verify it with a real checkout
+      // pass rather than trusting the listed page price.
+      if (
+        result.found_cheaper &&
+        result.source_link &&
+        (result.deal_type === "coupon" || result.deal_type === "sale")
+      ) {
+        row.set("Checkout Notes", "Checking checkout price...");
+        await row.save();
+
+        const checkout = await checkCheckoutPrice(result.source_link, knownCodes);
+        row.set(
+          "Checkout Verified Price",
+          checkout.verified_price != null ? checkout.verified_price : ""
+        );
+        row.set("Checkout Notes", checkout.notes);
+      }
+
       await row.save();
 
       console.log(`Processed: ${row.get("Title")} -> ${result.deal_type}`);
