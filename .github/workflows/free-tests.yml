@@ -1,0 +1,46 @@
+name: Free Tests (no API cost)
+
+on:
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Which test to run"
+        required: true
+        default: "sheet"
+        type: choice
+        options:
+          - sheet
+          - checkout
+      checkout_url:
+        description: "Product URL (only used for the checkout test)"
+        required: false
+        default: ""
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm install
+
+      - name: Sheet connection test
+        if: ${{ github.event.inputs.test == 'sheet' }}
+        run: npm run test:sheet
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+
+      - name: Checkout automation test
+        if: ${{ github.event.inputs.test == 'checkout' }}
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:checkout
+        env:
+          TEST_URL: ${{ github.event.inputs.checkout_url }}
+          SHIP_ZIP: ${{ secrets.SHIP_ZIP }}
