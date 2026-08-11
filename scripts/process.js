@@ -33,11 +33,15 @@ const {
   BATCH_SIZE = "10",
   DAILY_CAP = "100",
   RUN_COUNT = "1",
+  CLAUDE_MODEL = "claude-haiku-4-5-20251001",
+  MAX_SEARCHES_PER_PRODUCT = "3",
+  SHIP_ZIP = "",
 } = process.env;
 
 const batchSize = parseInt(BATCH_SIZE, 10);
 const dailyCap = parseInt(DAILY_CAP, 10);
 const runCount = Math.max(1, parseInt(RUN_COUNT, 10) || 1);
+const maxSearches = parseInt(MAX_SEARCHES_PER_PRODUCT, 10) || 3;
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -83,7 +87,29 @@ async function loadSheet() {
   return { doc, sheet };
 }
 
-// Reads your list of known/go-to coupon codes from a second tab called
+// Reads your trusted-vendor list from a tab called "VendorTiers"
+// (columns: Domain, Tier — e.g. "walmart.com, S"). Optional - vendors not
+// listed just get treated as unranked, not penalized.
+async function loadVendorTiers(doc) {
+  const tab = doc.sheetsByTitle["VendorTiers"];
+  if (!tab) return {};
+  const rows = await tab.getRows();
+  const map = {};
+  for (const r of rows) {
+    const domain = (r._rawData?.[0] || "").trim().toLowerCase();
+    const tier = (r._rawData?.[1] || "").trim().toUpperCase();
+    if (domain) map[domain] = tier;
+  }
+  return map;
+}
+
+function getDomain(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
 // "CouponCodes" (one code per row, column A). Optional - if the tab doesn't
 // exist or is empty, checkout verification still runs, it just won't have
 // codes to try and will report that in the notes.
@@ -112,15 +138,31 @@ async function findCheaperPrice(anthropic, row) {
 somewhere online than its current Amazon price - via a coupon code, an active sale,
 or subscribe-and-save pricing. Search using the exact product title, the way a
 shopper would. Check the first page of results; only dig further if nothing
-matches there. Respond with ONLY a JSON object, no other text, no code fences:
+matches there.
+
+BE STRICT ABOUT MATCHES. A wrong-but-similar product is worse than no match at all -
+it wastes the user's time and money if they buy it. Before reporting a price, confirm:
+- Same pack size / count / quantity (e.g. "24-pack" is NOT the same as "12-pack",
+  a single unit is NOT the same as a multi-pack)
+- Same variant (size, color, flavor, model number) as the Amazon listing's title
+- The price you're reporting is the actual current price on that page, not a
+  crossed-out original price, a different seller's price, or a price from a
+  different but similar listing
+
+If you can't confirm all of the above with real confidence, set "exact_match" to
+false and "found_cheaper" to false - do NOT report a price you're not sure matches.
+It is completely fine, and expected, for most products to come back with no match.
+
+Respond with ONLY a JSON object, no other text, no code fences:
 
 {
   "found_cheaper": true or false,
+  "exact_match": true or false,
   "best_price": number or null,
   "source_link": "url or null",
   "deal_type": "coupon" | "sale" | "subscribe_and_save" | "none",
   "confidence": "high" | "medium" | "low",
-  "notes": "short note, e.g. 'one-day sale, may not last' or 'no match found'"
+  "notes": "short note - if exact_match is false, briefly say why (e.g. 'found similar item but different pack size')"
 }`;
 
   const userPrompt = `Product title: ${title}
@@ -131,11 +173,11 @@ retailer, factoring in coupon codes and subscribe-and-save pricing where
 visible. Note if a deal looks time-limited.`;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-5",
+    model: CLAUDE_MODEL,
     max_tokens: 1000,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
-    tools: [{ type: "web_search_20250305", name: "web_search" }],
+    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearches }],
   });
 
   const textBlock = response.content
@@ -145,7 +187,32 @@ visible. Note if a deal looks time-limited.`;
 
   const cleaned = textBlock.replace(/```json|```/g, "").trim();
   try {
-    return JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+    // Belt-and-suspenders: even if the model says found_cheaper, don't trust
+    // it unless it also confirmed an exact match. Downgrade to "not found"
+    // rather than risk showing a wrong product's price as a real deal.
+    if (parsed.found_cheaper && parsed.exact_match !== true) {
+      parsed.found_cheaper = false;
+      parsed.confidence = "low";
+      parsed.notes = "Discarded uncertain match: " + (parsed.notes || "");
+    }
+    // Sanity checks: a "cheaper" price that isn't actually cheaper than
+    // Amazon's, or a link that isn't a real URL, isn't usable either way.
+    if (parsed.found_cheaper) {
+      const amazonPriceNum = parseFloat(amazonPrice);
+      const priceInvalid = !parsed.best_price || parsed.best_price <= 0;
+      const notActuallyCheaper =
+        !isNaN(amazonPriceNum) && parsed.best_price >= amazonPriceNum;
+      const linkInvalid =
+        !parsed.source_link || !/^https?:\/\//i.test(parsed.source_link);
+      if (priceInvalid || notActuallyCheaper || linkInvalid) {
+        parsed.found_cheaper = false;
+        parsed.confidence = "low";
+        parsed.notes =
+          "Discarded failed sanity check (price/link invalid): " + (parsed.notes || "");
+      }
+    }
+    return parsed;
   } catch (err) {
     return {
       found_cheaper: false,
@@ -162,6 +229,7 @@ async function main() {
   const { doc, sheet } = await loadSheet();
   const rows = await sheet.getRows();
   const knownCodes = await loadKnownCodes(doc);
+  const vendorTiers = await loadVendorTiers(doc);
 
   const today = todayStr();
   const doneToday = rows.filter(
@@ -171,13 +239,24 @@ async function main() {
   const remainingToday = Math.max(0, dailyCap - doneToday);
   if (remainingToday === 0) {
     console.log(`Daily cap of ${dailyCap} already reached for ${today}. Stopping.`);
+    await writeLastRunTimestamp(doc, 0);
     return;
   }
+
+const MAX_RETRIES = 3;
 
   const pending = rows
     .filter((r) => {
       const status = (r.get("Status") || "").trim();
-      return status === "" || status === "Pending";
+      if (status === "" || status === "Pending") return true;
+      // Retry errored rows automatically, up to MAX_RETRIES, so a temporary
+      // glitch doesn't leave a product stuck forever - but a row that keeps
+      // failing stops being retried instead of quietly burning budget.
+      if (status === "Error") {
+        const retries = parseInt(r.get("Retry Count"), 10) || 0;
+        return retries < MAX_RETRIES;
+      }
+      return false;
     })
     .sort((a, b) => {
       // Priority is now a raw score (see the FX2 formula in the setup notes) -
@@ -196,6 +275,7 @@ async function main() {
 
   if (batch.length === 0) {
     console.log("No pending rows to process.");
+    await writeLastRunTimestamp(doc, 0);
     return;
   }
 
@@ -210,11 +290,15 @@ async function main() {
 
       row.set("Status", "Done");
       row.set("Processed Date", today);
+      row.set("Retry Count", ""); // clear any prior retry count on success
       row.set("Best Price Found", result.best_price ?? "");
       row.set("Source Link", result.source_link ?? "");
       row.set("Deal Type", result.deal_type ?? "none");
       row.set("Confidence", result.confidence ?? "low");
       row.set("Notes", result.notes ?? "");
+
+      const domain = getDomain(result.source_link || "");
+      row.set("Vendor Tier", vendorTiers[domain] || "Unranked");
 
       // Second pass: if the search step found a promising lead (a coupon or
       // sale, with an actual link to check), verify it with a real checkout
@@ -227,10 +311,14 @@ async function main() {
         row.set("Checkout Notes", "Checking checkout price...");
         await row.save();
 
-        const checkout = await checkCheckoutPrice(result.source_link, knownCodes);
+        const checkout = await checkCheckoutPrice(result.source_link, knownCodes, SHIP_ZIP);
         row.set(
           "Checkout Verified Price",
           checkout.verified_price != null ? checkout.verified_price : ""
+        );
+        row.set(
+          "Checkout Total (3 units)",
+          checkout.verified_total_price != null ? checkout.verified_total_price : ""
         );
         row.set("Checkout Notes", checkout.notes);
       }
@@ -239,14 +327,50 @@ async function main() {
 
       console.log(`Processed: ${row.get("Title")} -> ${result.deal_type}`);
     } catch (err) {
-      row.set("Status", "Error");
-      row.set("Notes", "Error during processing: " + err.message);
+      const priorRetries = parseInt(row.get("Retry Count"), 10) || 0;
+      const newRetries = priorRetries + 1;
+      row.set("Status", newRetries >= MAX_RETRIES ? "Failed" : "Error");
+      row.set("Retry Count", newRetries);
+      row.set(
+        "Notes",
+        `Error during processing (attempt ${newRetries}/${MAX_RETRIES}): ` + err.message
+      );
       await row.save();
-      console.error(`Error on row "${row.get("Title")}":`, err.message);
+      console.error(`Error on row "${row.get("Title")}" (attempt ${newRetries}):`, err.message);
     }
   }
 
   console.log(`Run complete. Processed ${batch.length} row(s).`);
+  await writeLastRunTimestamp(doc, batch.length);
+}
+
+// Writes a timestamp to a small "Meta" tab so the dashboard can show
+// "last checked X ago" - a quick way to notice if the schedule has gone
+// quiet. Creates the tab automatically the first time it runs.
+async function writeLastRunTimestamp(doc, rowsProcessed) {
+  let meta = doc.sheetsByTitle["Meta"];
+  if (!meta) {
+    meta = await doc.addSheet({
+      title: "Meta",
+      headerValues: ["Key", "Value"],
+    });
+  }
+  const rows = await meta.getRows();
+  let row = rows.find((r) => r.get("Key") === "LastRun");
+  const value = new Date().toISOString();
+  if (row) {
+    row.set("Value", value);
+    await row.save();
+  } else {
+    await meta.addRow({ Key: "LastRun", Value: value });
+  }
+  let countRow = rows.find((r) => r.get("Key") === "LastRunRowCount");
+  if (countRow) {
+    countRow.set("Value", rowsProcessed);
+    await countRow.save();
+  } else {
+    await meta.addRow({ Key: "LastRunRowCount", Value: rowsProcessed });
+  }
 }
 
 main().catch((err) => {
