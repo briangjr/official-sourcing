@@ -1,0 +1,14 @@
+{
+  "name": "amazon-sourcing-tool",
+  "version": "1.0.0",
+  "description": "Background product-sourcing checker: reads a Google Sheet of pre-filtered Keepa candidates, searches the web for a cheaper price (coupon/sale/subscribe-and-save), writes results back.",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/process.js"
+  },
+  "dependencies": {
+    "google-spreadsheet": "^4.1.4",
+    "google-auth-library": "^9.14.1",
+    "@anthropic-ai/sdk": "^0.32.1"
+  }
+}
