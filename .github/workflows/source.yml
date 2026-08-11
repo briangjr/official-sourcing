@@ -5,7 +5,12 @@ on:
     # Runs every hour. GitHub's free scheduling isn't perfectly on-time,
     # so treat this as "roughly hourly," not exact.
     - cron: "0 * * * *"
-  workflow_dispatch: {} # lets you also trigger a run manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      run_count:
+        description: "How many batches to process in this run (1 = normal single run)"
+        required: false
+        default: "1"
 
 jobs:
   process:
@@ -19,6 +24,8 @@ jobs:
 
       - run: npm install
 
+      - run: npx playwright install --with-deps chromium
+
       - run: npm start
         env:
           SHEET_ID: ${{ secrets.SHEET_ID }}
@@ -27,3 +34,4 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           BATCH_SIZE: "10"
           DAILY_CAP: "100"
+          RUN_COUNT: ${{ github.event.inputs.run_count || '1' }}
