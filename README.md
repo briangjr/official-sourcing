@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/30920671/README.md)
+[README.md](https://github.com/user-attachments/files/30961517/README.md)
 # Amazon Sourcing Tool
 
 Reads a Google Sheet of pre-filtered Keepa candidates (you supply these — this
@@ -57,10 +57,24 @@ change how much each factor matters relative to the others.
 ## Checkout verification (Phase 2)
 
 For any product where the search step finds a coupon or sale lead, a second
-pass opens a real headless browser, adds the item to cart, and looks for a
-promo/coupon code field — trying any codes you've supplied in a second sheet
-tab called **CouponCodes** (one code per row, column A). Results land in the
-**Checkout Verified Price** and **Checkout Notes** columns.
+pass opens a real headless browser, sets quantity to **3** (not 1), adds to
+cart, and looks for a promo/coupon code field — trying any codes you've
+supplied in a second sheet tab called **CouponCodes** (one code per row,
+column A). It also fills in a shipping ZIP code if you supply one (see
+below), so cart totals reflect shipping-estimated pricing where a site shows
+that before checkout. The 3-unit total is divided back down to a per-unit
+price for a fair comparison against Amazon's single-unit listing — both the
+per-unit price (**Checkout Verified Price**) and the raw 3-unit total
+(**Checkout Total (3 units)**) are recorded, along with **Checkout Notes**.
+
+No payment information is ever entered anywhere — pricing is read from the
+cart/checkout page before any payment step, which is normally enough to see
+a coupon-adjusted or bulk-quantity price.
+
+**Shipping ZIP (optional):** add a `SHIP_ZIP` secret in GitHub (just a ZIP
+code, e.g. "48101") if you want shipping-estimated totals where a site
+offers that on its cart page. Skip it entirely if you'd rather not — the
+tool works fine without it, just without shipping factored in.
 
 This is genuinely best-effort: retailer checkout flows vary a lot, and some
 sites block automated browsers outright. When it can't find what it's
@@ -82,6 +96,48 @@ processes up to ten batches back-to-back in a single continuous job (much
 more efficient than actually launching ten separate jobs). This requires a
 GitHub personal access token (see the setup guide PDF) so the dashboard can
 tell GitHub Actions to start a run.
+
+## Reliability & accuracy improvements
+
+- **Stricter matching:** the search step now requires confirming pack size,
+  variant, and current price before accepting a match — an uncertain result
+  is discarded rather than shown as a real deal.
+- **Sanity checks:** a "cheaper" price that isn't actually lower than
+  Amazon's, or a link that isn't a real URL, gets discarded automatically.
+- **Automatic retries:** a row that errors is retried up to 3 times before
+  being marked "Failed" and left alone (tracked in the **Retry Count**
+  column), so a temporary glitch doesn't strand a product forever, and a
+  permanently broken site doesn't quietly burn budget forever either.
+- **Last-run tracking:** a small **Meta** tab (created automatically) logs
+  the timestamp of every run, shown on the dashboard as "Last checked X ago"
+  — an easy way to notice if the schedule has gone quiet.
+- **Dashboard summary bar:** total leads found, total potential profit, and
+  average ROI, at a glance above the charts.
+
+## Free testing (no API cost)
+
+Two things can be tested without spending anything on the Anthropic API:
+
+- **Sheet connection** — `npm run test:sheet` (or GitHub Actions → "Free
+  Tests (no API cost)" → run with "sheet" selected) confirms your service
+  account can read/write your Sheet correctly.
+- **Checkout automation** — `npm run test:checkout` with a `TEST_URL` env
+  var (or the same GitHub Actions workflow with "checkout" selected and a
+  product URL) runs the real quantity-of-3 / ZIP / coupon-code logic
+  against a page you choose, with zero AI involved.
+
+The only part that genuinely requires the paid API is the product-matching
+search step itself — there's no way to test that specific piece for free,
+since it's the AI reading and judging search results. Keep `BATCH_SIZE` and
+`DAILY_CAP` at 1 while testing that part to keep the cost to a single row.
+
+## Cost controls
+
+Search calls are capped at `MAX_SEARCHES_PER_PRODUCT` (default 3) per
+product, and the default model is Haiku 4.5 rather than Sonnet — both
+configurable in `.github/workflows/source.yml`. If match quality noticeably
+drops, try raising the search cap before switching back to a pricier model;
+it's usually the bigger lever.
 
 ## Notes on this first version
 
