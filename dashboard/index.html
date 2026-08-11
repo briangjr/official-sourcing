@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sourcing Dashboard</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14171b;
+    --border: #23272d;
+    --text: #e6e8eb;
+    --muted: #8b929c;
+    --accent: #5eead4;
+    --accent-dim: #234a44;
+    --good: #4ade80;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+    padding: 32px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; }
+
+  .status-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .pulse-dot {
+    position: relative;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .pulse-dot.active { background: var(--accent); }
+  .pulse-dot.active::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    animation: pulse 1.6s ease-out infinite;
+  }
+  @keyframes pulse {
+    0% { transform: scale(0.6); opacity: 0.9; }
+    100% { transform: scale(1.8); opacity: 0; }
+  }
+  .status-text .label { font-size: 13px; color: var(--muted); margin-bottom: 2px; }
+  .status-text .value { font-size: 15px; font-weight: 500; }
+  .status-meta { margin-left: auto; text-align: right; font-size: 13px; color: var(--muted); }
+
+  .buttons { display: flex; gap: 12px; margin-bottom: 24px; }
+  .btn {
+    flex: 1; padding: 14px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .btn:hover { background: #1b2026; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn.primary { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  .btn .sub { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+  .chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+  .chart-card h3 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .chart-empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
+  .bar-label { font-size: 10px; fill: var(--muted); }
+  .bar-value { font-size: 10px; fill: var(--text); }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--accent); color: var(--text);
+    padding: 12px 20px; border-radius: 8px; font-size: 13px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .toast.show { opacity: 1; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  thead th {
+    text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); padding: 12px 16px; border-bottom: 1px solid var(--border);
+  }
+  tbody td { padding: 14px 16px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: #181c21; }
+  .diff { color: var(--good); font-weight: 600; }
+  a.link { color: var(--accent); text-decoration: none; }
+  a.link:hover { text-decoration: underline; }
+  .empty { text-align: center; padding: 48px; color: var(--muted); }
+
+  .lock-wrap { max-width: 360px; margin: 120px auto; text-align: center; }
+  .lock-wrap input {
+    width: 100%; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-size: 14px; margin: 16px 0;
+  }
+  .lock-wrap button {
+    width: 100%; padding: 12px; border-radius: 8px; border: none;
+    background: var(--accent); color: #06201c; font-weight: 600; cursor: pointer;
+  }
+  .lock-error { color: #f87171; font-size: 13px; margin-top: 8px; min-height: 16px; }
+</style>
+</head>
+<body>
+
+<div id="lock" class="lock-wrap" style="display:none;">
+  <h1>Sourcing Dashboard</h1>
+  <input id="adminKeyInput" type="password" placeholder="Enter your admin key" />
+  <button onclick="unlock()">Enter</button>
+  <div class="lock-error" id="lockError"></div>
+</div>
+
+<div id="app" class="wrap" style="display:none;">
+  <header>
+    <h1>Sourcing Dashboard</h1>
+  </header>
+
+  <div class="status-card">
+    <div class="pulse-dot" id="pulseDot"></div>
+    <div class="status-text">
+      <div class="label" id="statusLabel">Checking status...</div>
+      <div class="value" id="statusValue">—</div>
+    </div>
+    <div class="status-meta" id="statusMeta"></div>
+  </div>
+
+  <div class="buttons">
+    <button class="btn primary" id="runOnceBtn" onclick="triggerRun(1, this)">
+      Run Once
+      <span class="sub">One scheduled-size run (~10 products)</span>
+    </button>
+    <button class="btn" id="runTenBtn" onclick="triggerRun(10, this)">
+      Run Ten Times
+      <span class="sub">Processes up to 100 products in one go</span>
+    </button>
+  </div>
+
+  <div class="charts">
+    <div class="chart-card">
+      <h3>Leads Found Per Day</h3>
+      <div id="leadsChart"></div>
+    </div>
+    <div class="chart-card">
+      <h3>Potential Profit Per Day</h3>
+      <div id="profitChart"></div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th>Amazon Price</th>
+        <th>Sourcing Price</th>
+        <th>Difference</th>
+        <th>Sales Rank</th>
+        <th>Deal Type</th>
+        <th>Source</th>
+        <th>Date Found</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const FUNCTION_URL = "/.netlify/functions/get-products";
+  let adminKey = localStorage.getItem("dashboardAdminKey") || "";
+
+  function fmtMoney(v) {
+    return v == null ? "—" : "$" + Number(v).toFixed(2);
+  }
+
+  async function loadData() {
+    try {
+      const res = await fetch(FUNCTION_URL, {
+        headers: adminKey ? { "x-admin-key": adminKey } : {},
+      });
+      if (res.status === 401) {
+        showLock("Incorrect key.");
+        return;
+      }
+      const data = await res.json();
+      render(data);
+      document.getElementById("lock").style.display = "none";
+      document.getElementById("app").style.display = "block";
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  function render(data) {
+    const dot = document.getElementById("pulseDot");
+    const label = document.getElementById("statusLabel");
+    const value = document.getElementById("statusValue");
+    const meta = document.getElementById("statusMeta");
+
+    if (data.isActive) {
+      dot.classList.add("active");
+      label.textContent = "Currently sourcing";
+      value.textContent = data.currentlyChecking || "Working...";
+    } else {
+      dot.classList.remove("active");
+      label.textContent = "Idle";
+      value.textContent = "Waiting for next scheduled run";
+    }
+    meta.textContent = data.pendingCount + " pending in queue";
+
+    renderBarChart("leadsChart", data.dailyStats, "leads", "#5eead4", v => v);
+    renderBarChart("profitChart", data.dailyStats, "potentialProfit", "#4ade80", v => "$" + v.toFixed(0));
+
+    const tbody = document.getElementById("tableBody");
+    if (!data.products || data.products.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">No deals found yet — check back after the next run.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.products.map(p => `
+      <tr>
+        <td>${p.title}</td>
+        <td>${fmtMoney(p.amazonPrice)}</td>
+        <td>${fmtMoney(p.sourcingPrice)}</td>
+        <td class="diff">${fmtMoney(p.priceDifference)}</td>
+        <td>${p.salesRank || "—"}</td>
+        <td>${p.vendor || "—"}</td>
+        <td>${p.sourceLink ? `<a class="link" href="${p.sourceLink}" target="_blank">View</a>` : "—"}</td>
+        <td>${p.dateFound || "—"}</td>
+      </tr>
+    `).join("");
+  }
+
+  function showLock(err) {
+    document.getElementById("app").style.display = "none";
+    document.getElementById("lock").style.display = "block";
+    document.getElementById("lockError").textContent = err || "";
+  }
+
+  function unlock() {
+    adminKey = document.getElementById("adminKeyInput").value;
+    localStorage.setItem("dashboardAdminKey", adminKey);
+    loadData();
+  }
+
+  loadData();
+  setInterval(loadData, 30000); // refresh every 30s
+
+  function showToast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 3500);
+  }
+
+  async function triggerRun(runCount, btnEl) {
+    btnEl.disabled = true;
+    const originalHTML = btnEl.innerHTML;
+    btnEl.textContent = "Starting...";
+    try {
+      const res = await fetch("/.netlify/functions/trigger-run", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(adminKey ? { "x-admin-key": adminKey } : {}),
+        },
+        body: JSON.stringify({ runCount }),
+      });
+      if (res.ok) {
+        showToast(runCount === 1
+          ? "Run started — check back in a couple minutes."
+          : "Extended run started — this may take a while.");
+      } else {
+        showToast("Could not start run — check Netlify function logs.");
+      }
+    } catch (err) {
+      showToast("Error starting run: " + err.message);
+    } finally {
+      setTimeout(() => {
+        btnEl.disabled = false;
+        btnEl.innerHTML = originalHTML;
+      }, 4000);
+    }
+  }
+
+  function renderBarChart(containerId, data, key, color, formatValue) {
+    const container = document.getElementById(containerId);
+    if (!data || data.length === 0) {
+      container.innerHTML = '<div class="chart-empty">No data yet</div>';
+      return;
+    }
+    const width = 480, height = 160, padding = 24;
+    const max = Math.max(...data.map(d => d[key]), 1);
+    const barWidth = (width - padding * 2) / data.length;
+
+    let bars = "";
+    data.forEach((d, i) => {
+      const barHeight = (d[key] / max) * (height - padding * 2);
+      const x = padding + i * barWidth;
+      const y = height - padding - barHeight;
+      bars += `
+        <rect x="${x + 4}" y="${y}" width="${barWidth - 8}" height="${barHeight}" rx="3" fill="${color}" />
+        <text class="bar-value" x="${x + barWidth / 2}" y="${y - 4}" text-anchor="middle">${formatValue(d[key])}</text>
+        <text class="bar-label" x="${x + barWidth / 2}" y="${height - padding + 14}" text-anchor="middle">${d.date.slice(5)}</text>
+      `;
+    });
+
+    container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" width="100%" height="160">${bars}</svg>`;
+  }
+</script>
+
+</body>
+</html>
