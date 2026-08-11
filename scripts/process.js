@@ -123,6 +123,37 @@ async function loadKnownCodes(doc) {
     .filter(Boolean);
 }
 
+// Searches for currently-circulating coupon codes for a specific site,
+// to supplement (not replace) whatever you've listed in the CouponCodes
+// tab. Capped tightly on searches since this runs per checkout-verified
+// row, not per product - keep it cheap. Codes found this way are unverified
+// by definition (that's what checkCheckoutPrice actually tests) - treat
+// this as "candidates to try," not "confirmed working codes."
+async function findCandidateCoupons(anthropic, domain) {
+  if (!domain) return [];
+  try {
+    const response = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 300,
+      system: `Search for currently active/valid coupon codes for the retailer whose domain is
+given. Respond with ONLY a JSON array of code strings, max 5, no other text, no code
+fences - e.g. ["SAVE10","WELCOME15"]. If you find nothing credible, respond with [].`,
+      messages: [{ role: "user", content: `Domain: ${domain}` }],
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],
+    });
+    const text = response.content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("\n")
+      .replace(/```json|```/g, "")
+      .trim();
+    const codes = JSON.parse(text);
+    return Array.isArray(codes) ? codes.slice(0, 5) : [];
+  } catch (err) {
+    return []; // fail quietly - this is a nice-to-have on top of manual codes, not critical
+  }
+}
+
 // Ask Claude to search the web and return a structured result for one product.
 // "Buy Box: Current" is what a customer actually pays on Amazon right now
 // (not "Amazon: Current", which is Amazon's own price when they're a seller
@@ -311,7 +342,18 @@ const MAX_RETRIES = 3;
         row.set("Checkout Notes", "Checking checkout price...");
         await row.save();
 
-        const checkout = await checkCheckoutPrice(result.source_link, knownCodes, SHIP_ZIP);
+        // Combine your manual CouponCodes list with codes discovered by a
+        // quick site-specific search - dedupe, cap the total tried so a
+        // run doesn't spiral into trying dozens of codes on one product.
+        const discoveredCodes = await findCandidateCoupons(anthropic, domain);
+        const combinedCodes = [...new Set([...knownCodes, ...discoveredCodes])].slice(0, 6);
+
+        const checkout = await checkCheckoutPrice(result.source_link, combinedCodes, SHIP_ZIP);
+        const discoveredCount = discoveredCodes.filter((c) => !knownCodes.includes(c)).length;
+        const sourceNote =
+          discoveredCount > 0
+            ? ` (${knownCodes.length} from your list, ${discoveredCount} auto-discovered)`
+            : "";
         row.set(
           "Checkout Verified Price",
           checkout.verified_price != null ? checkout.verified_price : ""
@@ -320,7 +362,7 @@ const MAX_RETRIES = 3;
           "Checkout Total (3 units)",
           checkout.verified_total_price != null ? checkout.verified_total_price : ""
         );
-        row.set("Checkout Notes", checkout.notes);
+        row.set("Checkout Notes", checkout.notes + sourceNote);
       }
 
       await row.save();
