@@ -41,9 +41,28 @@ async function findByText(page, patterns, selector = "button, a, input[type=subm
 }
 
 async function findPriceOnPage(page) {
-  // Very rough: look for the largest dollar-amount-looking text near the
-  // top of the page. Good enough as a starting point, not exact for every
-  // site's layout.
+  // Prefer a price near "total" / "subtotal" text - much more likely to be
+  // the actual cart total than a random price elsewhere on the page.
+  const totalMatch = await page.evaluate(() => {
+    const regex = /(subtotal|order total|cart total|total)/i;
+    const priceRegex = /\$\s?\d{1,4}(?:\.\d{2})?/;
+    const all = Array.from(document.querySelectorAll("body *"));
+    for (const el of all) {
+      const text = el.textContent || "";
+      if (regex.test(text) && priceRegex.test(text) && text.length < 100) {
+        const m = text.match(priceRegex);
+        if (m) return m[0];
+      }
+    }
+    return null;
+  }).catch(() => null);
+
+  if (totalMatch) {
+    return parseFloat(totalMatch.replace(/[^0-9.]/g, ""));
+  }
+
+  // Fallback: rough heuristic - smallest dollar-looking amount on the page.
+  // Best-effort only; not reliable on every layout.
   const text = await page.locator("body").innerText().catch(() => "");
   const matches = text.match(/\$\s?\d{1,4}(?:\.\d{2})?/g);
   if (!matches || matches.length === 0) return null;
@@ -51,11 +70,68 @@ async function findPriceOnPage(page) {
   return Math.min(...values.filter((v) => v > 0));
 }
 
-export async function checkCheckoutPrice(url, knownCodes = []) {
+const QUANTITY = 3; // test bulk-of-3 pricing, then divide the total back to a per-unit price
+
+async function findQuantityField(page) {
+  const inputs = await page.locator("input").all();
+  for (const input of inputs) {
+    const name = (await input.getAttribute("name").catch(() => "")) || "";
+    const id = (await input.getAttribute("id").catch(() => "")) || "";
+    const ariaLabel = (await input.getAttribute("aria-label").catch(() => "")) || "";
+    if (/qty|quantity/i.test(`${name} ${id} ${ariaLabel}`)) {
+      return input;
+    }
+  }
+  // Some sites use a <select> instead of a number input.
+  const selects = await page.locator("select").all();
+  for (const select of selects) {
+    const name = (await select.getAttribute("name").catch(() => "")) || "";
+    if (/qty|quantity/i.test(name)) return select;
+  }
+  return null;
+}
+
+async function setQuantity(page, field, qty) {
+  const tag = await field.evaluate((el) => el.tagName.toLowerCase()).catch(() => "input");
+  if (tag === "select") {
+    await field.selectOption({ label: String(qty) }).catch(async () => {
+      await field.selectOption(String(qty)).catch(() => {});
+    });
+  } else {
+    await field.fill(String(qty)).catch(() => {});
+    await field.press("Tab").catch(() => {});
+  }
+}
+
+async function fillZipIfPresent(page, zip) {
+  if (!zip) return false;
+  const inputs = await page.locator("input").all();
+  for (const input of inputs) {
+    const placeholder = (await input.getAttribute("placeholder").catch(() => "")) || "";
+    const name = (await input.getAttribute("name").catch(() => "")) || "";
+    const ariaLabel = (await input.getAttribute("aria-label").catch(() => "")) || "";
+    const combined = `${placeholder} ${name} ${ariaLabel}`;
+    if (/zip|postal/i.test(combined)) {
+      await input.fill(zip).catch(() => {});
+      const estimateBtn = await findByText(page, [/estimate/i, /calculate/i, /apply/i], "button");
+      if (estimateBtn) {
+        await estimateBtn.click({ timeout: 6000 }).catch(() => {});
+        await page.waitForTimeout(1500);
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function checkCheckoutPrice(url, knownCodes = [], shipZip = "") {
   const result = {
     coupon_field_found: false,
     codes_tried: [],
-    verified_price: null,
+    verified_price: null, // per-unit, after dividing the 3-unit total
+    verified_total_price: null, // raw total for 3 units, before dividing
+    quantity_tested: QUANTITY,
+    zip_applied: false,
     notes: "",
   };
 
@@ -68,6 +144,12 @@ export async function checkCheckoutPrice(url, knownCodes = []) {
     });
 
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+
+    // Try to set quantity to 3 before adding to cart (common on product pages).
+    const qtyFieldOnPage = await findQuantityField(page);
+    if (qtyFieldOnPage) {
+      await setQuantity(page, qtyFieldOnPage, QUANTITY);
+    }
 
     const addToCartBtn = await findByText(page, ADD_TO_CART_PATTERNS);
     if (!addToCartBtn) {
@@ -84,6 +166,18 @@ export async function checkCheckoutPrice(url, knownCodes = []) {
       await cartLink.click({ timeout: 10000 }).catch(() => {});
       await page.waitForTimeout(2000);
     }
+
+    // If quantity wasn't settable on the product page, try again now we're
+    // in the cart - many sites only expose quantity controls here.
+    if (!qtyFieldOnPage) {
+      const qtyFieldInCart = await findQuantityField(page);
+      if (qtyFieldInCart) {
+        await setQuantity(page, qtyFieldInCart, QUANTITY);
+        await page.waitForTimeout(1500);
+      }
+    }
+
+    result.zip_applied = await fillZipIfPresent(page, shipZip);
 
     const couponField = await page
       .locator("input")
@@ -104,17 +198,20 @@ export async function checkCheckoutPrice(url, knownCodes = []) {
     }
 
     if (!matchedField) {
-      result.notes = "Reached cart, but no coupon/promo code field found on this site.";
-      result.verified_price = await findPriceOnPage(page);
+      const zipNote = result.zip_applied ? " Shipping estimate applied via ZIP." : "";
+      result.notes = "Reached cart, but no coupon/promo code field found on this site." + zipNote;
+      recordPrice(result, await findPriceOnPage(page));
       return result;
     }
 
     result.coupon_field_found = true;
 
     if (knownCodes.length === 0) {
+      const zipNote = result.zip_applied ? " Shipping estimate applied via ZIP." : "";
       result.notes =
-        "Coupon field found, but no known codes were supplied to try. Add codes to the CouponCodes sheet tab.";
-      result.verified_price = await findPriceOnPage(page);
+        "Coupon field found, but no known codes were supplied to try. Add codes to the CouponCodes sheet tab." +
+        zipNote;
+      recordPrice(result, await findPriceOnPage(page));
       return result;
     }
 
@@ -128,8 +225,9 @@ export async function checkCheckoutPrice(url, knownCodes = []) {
       result.codes_tried.push(code);
     }
 
-    result.verified_price = await findPriceOnPage(page);
-    result.notes = `Tried ${result.codes_tried.length} code(s): ${result.codes_tried.join(", ")}`;
+    recordPrice(result, await findPriceOnPage(page));
+    const zipNote = result.zip_applied ? " Shipping estimate applied via ZIP." : "";
+    result.notes = `Tried ${result.codes_tried.length} code(s) on ${QUANTITY} units: ${result.codes_tried.join(", ")}.${zipNote}`;
     return result;
   } catch (err) {
     result.notes = "Checkout check failed: " + err.message;
@@ -137,4 +235,13 @@ export async function checkCheckoutPrice(url, knownCodes = []) {
   } finally {
     if (browser) await browser.close();
   }
+}
+
+// Stores the raw total found on the page, and the per-unit price after
+// dividing by the tested quantity (3) - this is the number that's actually
+// comparable to Amazon's single-unit listing price.
+function recordPrice(result, totalPrice) {
+  if (totalPrice == null) return;
+  result.verified_total_price = totalPrice;
+  result.verified_price = +(totalPrice / QUANTITY).toFixed(2);
 }
