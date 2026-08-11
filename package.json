@@ -4,7 +4,9 @@
   "description": "Background product-sourcing checker: reads a Google Sheet of pre-filtered Keepa candidates, searches the web for a cheaper price (coupon/sale/subscribe-and-save), writes results back.",
   "type": "module",
   "scripts": {
-    "start": "node scripts/process.js"
+    "start": "node scripts/process.js",
+    "test:sheet": "node scripts/test-sheet-connection.js",
+    "test:checkout": "node scripts/test-checkout.js"
   },
   "dependencies": {
     "google-spreadsheet": "^4.1.4",
