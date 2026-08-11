@@ -17,6 +17,8 @@ function normalizePrivateKey(raw) {
   return key.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\r\n/g, "\n");
 }
 
+const TIER_POINTS = { S: 3, A: 2, B: 1, C: 0.5, D: 1.5 };
+
 export async function handler(event) {
   const { SHEET_ID, GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY, ADMIN_KEY } = process.env;
 
@@ -37,6 +39,14 @@ export async function handler(event) {
     const sheet = doc.sheetsByTitle["Sheet1"];
     const rows = await sheet.getRows();
 
+    let lastRun = null;
+    const metaTab = doc.sheetsByTitle["Meta"];
+    if (metaTab) {
+      const metaRows = await metaTab.getRows();
+      const lastRunRow = metaRows.find((r) => r.get("Key") === "LastRun");
+      if (lastRunRow) lastRun = lastRunRow.get("Value");
+    }
+
     const products = rows
       .filter((r) => (r.get("Status") || "") === "Done")
       .map((r) => {
@@ -49,12 +59,28 @@ export async function handler(event) {
           amazonPrice != null && sourcingPrice != null
             ? +(amazonPrice - sourcingPrice).toFixed(2)
             : null;
+        const roiPercent =
+          diff != null && sourcingPrice ? +((diff / sourcingPrice) * 100).toFixed(1) : null;
+        const vendorTier = (r.get("Vendor Tier") || "").trim();
+        const reliabilityPoints = TIER_POINTS[vendorTier] || 0;
+
+        // Score blends all three factors you asked for: profit ($), ROI (%),
+        // and vendor reliability (tier). Weights are adjustable - this
+        // favors real dollar profit slightly over ROI %, with tier as a
+        // meaningful but not dominant boost.
+        const score =
+          diff != null
+            ? +((diff * 1.0) + (roiPercent || 0) * 0.4 + reliabilityPoints * 8).toFixed(1)
+            : null;
 
         return {
           title: r.get("Title") || "",
           amazonPrice,
           sourcingPrice,
           priceDifference: diff,
+          roiPercent,
+          vendorTier: vendorTier || "Unranked",
+          score,
           salesRank: r.get("Sales Rank: Current") || "",
           vendor: r.get("Deal Type") || "",
           sourceLink: r.get("Checkout Notes")?.includes("Tried")
@@ -65,6 +91,17 @@ export async function handler(event) {
       })
       .filter((p) => p.priceDifference !== null && p.priceDifference > 0)
       .sort((a, b) => b.priceDifference - a.priceDifference);
+
+    const profitRanked = [...products].sort((a, b) => b.score - a.score).slice(0, 10);
+
+    const summary = {
+      totalLeads: products.length,
+      totalPotentialProfit: +products.reduce((sum, p) => sum + (p.priceDifference || 0), 0).toFixed(2),
+      avgRoi:
+        products.length > 0
+          ? +(products.reduce((sum, p) => sum + (p.roiPercent || 0), 0) / products.length).toFixed(1)
+          : 0,
+    };
 
     const processingRow = rows.find((r) => (r.get("Status") || "") === "Processing");
     const pendingCount = rows.filter((r) => (r.get("Status") || "").trim() === "" || r.get("Status") === "Pending").length;
@@ -88,6 +125,9 @@ export async function handler(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         products,
+        profitRanked,
+        summary,
+        lastRun,
         isActive: Boolean(processingRow),
         currentlyChecking: processingRow ? processingRow.get("Title") : null,
         pendingCount,
