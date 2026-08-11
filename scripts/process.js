@@ -40,10 +40,33 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
+// Google's private keys are picky about formatting once they arrive as a
+// GitHub secret (plain text). This handles the common ways they get mangled
+// in copy-paste: surrounding quotes, literal "\n" sequences instead of real
+// newlines, and stray \r characters from Windows editors.
+function normalizePrivateKey(raw) {
+  let key = raw.trim();
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1);
+  }
+  key = key.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\r\n/g, "\n");
+  return key;
+}
+
 async function loadSheet() {
+  const normalizedKey = normalizePrivateKey(GOOGLE_PRIVATE_KEY);
+  if (!normalizedKey.includes("BEGIN PRIVATE KEY")) {
+    throw new Error(
+      "GOOGLE_PRIVATE_KEY doesn't look like a valid key (missing 'BEGIN PRIVATE KEY'). " +
+      "Re-copy the private_key value from your service account JSON file and update the secret."
+    );
+  }
   const jwt = new JWT({
     email: GOOGLE_CLIENT_EMAIL,
-    key: GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+    key: normalizedKey,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
   const doc = new GoogleSpreadsheet(SHEET_ID, jwt);
