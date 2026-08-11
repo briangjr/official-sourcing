@@ -9,6 +9,7 @@
   "dependencies": {
     "google-spreadsheet": "^4.1.4",
     "google-auth-library": "^9.14.1",
-    "@anthropic-ai/sdk": "^0.32.1"
+    "@anthropic-ai/sdk": "^0.32.1",
+    "playwright": "^1.47.0"
   }
 }
