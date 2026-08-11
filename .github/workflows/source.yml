@@ -1,0 +1,29 @@
+name: Source Products
+
+on:
+  schedule:
+    # Runs every hour. GitHub's free scheduling isn't perfectly on-time,
+    # so treat this as "roughly hourly," not exact.
+    - cron: "0 * * * *"
+  workflow_dispatch: {} # lets you also trigger a run manually from the Actions tab
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm install
+
+      - run: npm start
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BATCH_SIZE: "10"
+          DAILY_CAP: "100"
