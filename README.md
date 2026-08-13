@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/30961517/README.md)
+[README.md](https://github.com/user-attachments/files/31009780/README.md)
 # Amazon Sourcing Tool
 
 Reads a Google Sheet of pre-filtered Keepa candidates (you supply these — this
@@ -54,7 +54,109 @@ and penalizes a Buy Box dominated by one top seller (AC) — higher score =
 checked sooner. Adjust the weights (the `*2` and `*100` multipliers) to
 change how much each factor matters relative to the others.
 
+## Confidence tiers & dashboard persistence
+
+Every finished product now gets classified into one of three tiers when
+it's moved out of Sheet1:
+
+- **Qualifies** (clears $3 profit or 20% ROI) — kept in full in the
+  **Archive** tab, shown prominently on the dashboard, same as before.
+- **Medium** (a real match was found, or the model flagged genuine
+  confidence, but it didn't clear the bar) — kept in full in **Archive**
+  too, since there's a real chance it's worth a second look later, but
+  **not** shown on the main dashboard — keeps the prominent view free of
+  low-value clutter while nothing is actually lost.
+- **Low** (no match found, or a match with zero/negative benefit) —
+  nothing worth keeping in detail. Only the ASIN is remembered, in a lean
+  **SeenASINs** tab (just ASIN, Title, and the date checked) — enough to
+  guarantee it's never re-checked (and never re-paid-for) again, without
+  carrying any bulky data you'll never use.
+
+**The dashboard now also reads from the Archive tab, not just Sheet1** —
+so erasing Sheet1 clears your active working queue, but your leads
+history and everything worth remembering stay exactly where they are.
+
+## Qualifying-lead threshold ($3 profit OR 20% ROI)
+
+A lead counts as "worth pursuing" (shown on the dashboard, included in the
+daily report) if it clears **$3 profit OR 20% ROI** — either bar, not
+both. Adjustable via `MIN_PROFIT_FLOOR` and `MIN_ROI_FLOOR` at the top of
+`netlify/functions/get-products.js` and `scripts/process.js` (kept in sync
+manually since they're two different files/languages-in-spirit but the
+same logic — change both if you adjust this).
+
+## Dashboard redesign
+
+Reorganized into labeled sections (Overview, Sourcing Activity, Leads).
+The three top KPI cards now show a 7-day sparkline and a day-over-day
+trend badge (green up / red down). A new donut chart shows your leads
+broken down by vendor tier (S/A/B/C/D/Unranked) at a glance.
+
+## Keepa API auto-import (parked, pending two things from you)
+
+Your Keepa Pro plan already includes API access (1 token/min) at no extra
+cost, so this is feasible without new spend once two things are provided:
+your Keepa API key, and the exact filter values from your saved Product
+Finder search. Not built yet — guessing at filter criteria risks silently
+sourcing against the wrong parameters.
+
+## Recent improvements (matching, cost, and dashboard)
+
+- **Trusted-site-first search:** the search step now checks your S/A tier
+  vendor domains specifically (via site-restricted search) before falling
+  back to a general web search — raises match trustworthiness and tends to
+  resolve faster/cheaper too.
+- **Profit floor:** products below `MIN_AMAZON_PRICE` (default $15) skip
+  the paid search step entirely — no point paying to check something too
+  cheap for a deal to matter.
+- **Funnel view** on the dashboard shows exactly where leads drop off:
+  Searched → Match Found → Checkout Verified → Worth Pursuing.
+- **Hit-rate trend chart** — % of searched rows becoming a real lead, per
+  day, so you can see whether changes are actually working over time.
+- **Sortable, filterable leads table** — click any column header to sort,
+  filter by vendor tier.
+
+Deliberately not included yet: Amazon SP-API ungating checks and a
+dedicated coupon-code API — both need real account setup that couldn't be
+verified without your credentials; worth tackling as focused follow-ups
+once you're ready. Keepa API auto-import was also left out — it's not
+free (starts around €49/month separate from your regular subscription),
+so it didn't meet the "keep spend low" bar.
+
+## Daily reports
+
+At the end of each day's processing, the top 10 leads (by the same
+profit+ROI+reliability score used elsewhere) are snapshotted into a
+**DailyReports** tab (created automatically) — one row per lead, per day.
+A "Daily Reports" link on the dashboard (next to Diagnostics) lets you
+browse past days and click into any of them to see that day's top 10,
+independent of whatever's currently sitting in Sheet1 or Archive.
+
+## Archiving & history (avoids re-checking the same product twice)
+
+Once Sheet1 builds up more than 200 completed (Done/Failed) rows, the
+oldest ones are automatically moved to a new **Archive** tab (created
+automatically) — nothing is deleted, just relocated, keeping Sheet1 fast.
+Before processing, the script also checks the Archive tab by ASIN — a
+product already checked before (even in an earlier, now-archived batch)
+gets marked **"Skipped (already checked)"** instead of being re-processed
+and re-billed if it shows up again in a future Keepa paste.
+
+The dashboard's main table shows only the most recent 50 leads, to stay
+light — full history persists in the Archive tab regardless of what's
+currently visible.
+
 ## Checkout verification (Phase 2)
+
+Codes tried at checkout come from two sources: your **CouponCodes** tab
+(manual, trusted), and a quick site-specific search that looks for
+currently-circulating codes for that domain (automatic, unverified by
+definition — that's what the checkout pass actually tests). Both are
+combined and deduped, capped at 6 codes total per product. Checkout Notes
+shows how many came from each source. This adds one extra search call per
+checkout-verified row (not every row), capped at 2 searches — a small,
+real addition to cost, only on the subset of rows that already have a
+promising lead worth checking out.
 
 For any product where the search step finds a coupon or sale lead, a second
 pass opens a real headless browser, sets quantity to **3** (not 1), adds to
