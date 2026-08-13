@@ -38,3 +38,4 @@ jobs:
           CLAUDE_MODEL: "claude-haiku-4-5-20251001"
           MAX_SEARCHES_PER_PRODUCT: "3"
           SHIP_ZIP: ${{ secrets.SHIP_ZIP }}
+          MIN_AMAZON_PRICE: "15"
