@@ -36,12 +36,14 @@ const {
   CLAUDE_MODEL = "claude-haiku-4-5-20251001",
   MAX_SEARCHES_PER_PRODUCT = "3",
   SHIP_ZIP = "",
+  MIN_AMAZON_PRICE = "15",
 } = process.env;
 
 const batchSize = parseInt(BATCH_SIZE, 10);
 const dailyCap = parseInt(DAILY_CAP, 10);
 const runCount = Math.max(1, parseInt(RUN_COUNT, 10) || 1);
 const maxSearches = parseInt(MAX_SEARCHES_PER_PRODUCT, 10) || 3;
+const minAmazonPrice = parseFloat(MIN_AMAZON_PRICE) || 0;
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -161,16 +163,24 @@ fences - e.g. ["SAVE10","WELCOME15"]. If you find nothing credible, respond with
 // compare against a different Keepa column.
 const AMAZON_PRICE_COLUMN = "Buy Box: Current";
 
-async function findCheaperPrice(anthropic, row) {
+async function findCheaperPrice(anthropic, row, trustedDomains = []) {
   const title = row.get("Title");
   const amazonPrice = row.get(AMAZON_PRICE_COLUMN);
+
+  const trustedSiteInstruction =
+    trustedDomains.length > 0
+      ? `\nCHECK THESE TRUSTED SITES FIRST, before a general web search: ${trustedDomains.join(", ")}.
+Use site-restricted searches (e.g. "site:walmart.com <product title>") against these domains first -
+a match found on one of these is inherently more trustworthy than a random search result. Only fall
+back to an unrestricted general web search if none of these trusted sites have it.\n`
+      : "";
 
   const systemPrompt = `You are checking whether a specific product can be bought cheaper
 somewhere online than its current Amazon price - via a coupon code, an active sale,
 or subscribe-and-save pricing. Search using the exact product title, the way a
 shopper would. Check the first page of results; only dig further if nothing
 matches there.
-
+${trustedSiteInstruction}
 BE STRICT ABOUT MATCHES. A wrong-but-similar product is worse than no match at all -
 it wastes the user's time and money if they buy it. Before reporting a price, confirm:
 - Same pack size / count / quantity (e.g. "24-pack" is NOT the same as "12-pack",
@@ -193,6 +203,7 @@ Respond with ONLY a JSON object, no other text, no code fences:
   "source_link": "url or null",
   "deal_type": "coupon" | "sale" | "subscribe_and_save" | "none",
   "confidence": "high" | "medium" | "low",
+  "matched_trusted_site": true or false,
   "notes": "short note - if exact_match is false, briefly say why (e.g. 'found similar item but different pack size')"
 }`;
 
@@ -256,11 +267,237 @@ visible. Note if a deal looks time-limited.`;
   }
 }
 
+// Classifies a finished row into qualifies / medium / low, based on the
+// same $ profit / % ROI bar used everywhere else, plus the model's own
+// confidence flag as a secondary signal for borderline cases.
+function classifyRow(row) {
+  if (row.get("Status") === "Failed") return "low"; // no reliable data either way
+
+  const amazonPrice = parseFloat(row.get(AMAZON_PRICE_COLUMN));
+  const sourcingPrice =
+    parseFloat(row.get("Checkout Verified Price")) || parseFloat(row.get("Best Price Found"));
+  const dealType = row.get("Deal Type") || "none";
+  const confidence = (row.get("Confidence") || "low").toLowerCase();
+
+  if (!sourcingPrice || dealType === "none") return "low";
+
+  const diff = amazonPrice - sourcingPrice;
+  const roi = sourcingPrice ? (diff / sourcingPrice) * 100 : 0;
+
+  if (diff >= MIN_PROFIT_FLOOR || roi >= MIN_ROI_FLOOR) return "qualifies";
+  if (diff > 0 || confidence === "medium" || confidence === "high") return "medium";
+  return "low";
+}
+
+// Reads the ASINs of everything already checked before - both full Archive
+// entries (qualifying/medium) and the lean SeenASINs list (low-confidence,
+// detail discarded) - so nothing gets re-checked and re-billed regardless
+// of which bucket it landed in last time.
+async function loadArchivedAsins(doc) {
+  const asins = new Set();
+
+  const archive = doc.sheetsByTitle["Archive"];
+  if (archive) {
+    const rows = await archive.getRows();
+    rows
+      .filter((r) => r.get("Status") === "Done")
+      .forEach((r) => {
+        const asin = (r.get("ASIN") || "").trim();
+        if (asin) asins.add(asin);
+      });
+  }
+
+  const seen = doc.sheetsByTitle["SeenASINs"];
+  if (seen) {
+    const rows = await seen.getRows();
+    rows.forEach((r) => {
+      const asin = (r.get("ASIN") || "").trim();
+      if (asin) asins.add(asin);
+    });
+  }
+
+  return asins;
+}
+
+const ARCHIVE_KEEP_COUNT = 200; // how many finished rows stay live in Sheet1
+
+// Moves old Done/Failed rows out of Sheet1, routed by confidence tier:
+//   - qualifies / medium -> full row moved to "Archive" (kept for the
+//     dashboard's history and, for medium, in case it's worth a second
+//     look later - just not shown prominently, since it didn't clear the
+//     $3/20% ROI bar).
+//   - low -> only the ASIN is kept, in a lean "SeenASINs" tab, purely so
+//     it's never re-checked and re-billed again. No title/price/link kept
+//     - there's nothing worth remembering beyond "already checked, no
+//     good match."
+// Both tabs are created automatically the first time they're needed.
+async function archiveOldRows(doc, sheet) {
+  const rows = await sheet.getRows();
+  const finished = rows
+    .filter((r) => ["Done", "Failed"].includes(r.get("Status")))
+    .sort((a, b) => new Date(a.get("Processed Date") || 0) - new Date(b.get("Processed Date") || 0));
+
+  if (finished.length <= ARCHIVE_KEEP_COUNT) return 0;
+
+  const toMove = finished.slice(0, finished.length - ARCHIVE_KEEP_COUNT);
+  const headers = sheet.headerValues;
+
+  let archive = doc.sheetsByTitle["Archive"];
+  let seen = doc.sheetsByTitle["SeenASINs"];
+
+  let archivedCount = 0;
+  let seenCount = 0;
+
+  for (const row of toMove) {
+    const tier = classifyRow(row);
+
+    if (tier === "low") {
+      if (!seen) {
+        seen = await doc.addSheet({
+          title: "SeenASINs",
+          headerValues: ["ASIN", "Title", "Date Checked"],
+        });
+      }
+      await seen.addRow({
+        ASIN: row.get("ASIN") || "",
+        Title: row.get("Title") || "",
+        "Date Checked": row.get("Processed Date") || "",
+      });
+      seenCount++;
+    } else {
+      if (!archive) {
+        archive = await doc.addSheet({ title: "Archive", headerValues: headers });
+      }
+      const rowData = {};
+      headers.forEach((h) => (rowData[h] = row.get(h) || ""));
+      await archive.addRow(rowData);
+      archivedCount++;
+    }
+
+    await row.delete();
+  }
+
+  console.log(
+    `Moved ${toMove.length} row(s): ${archivedCount} to Archive (qualifying/medium), ${seenCount} to SeenASINs (low confidence, detail discarded).`
+  );
+  return toMove.length;
+}
+
+// Snapshots today's top 10 leads (by the same profit+ROI+reliability score
+// used on the dashboard) into a "DailyReports" tab, one row per lead, so
+// you can click into any past day later even after Sheet1/Archive rows
+// have moved around. Only writes something if today had at least one
+// qualifying lead - a quiet day just doesn't add rows.
+const TIER_POINTS_LOCAL = { S: 3, A: 2, B: 1, C: 0.5, D: 1.5 };
+const MIN_PROFIT_FLOOR = 3; // dollars - matches the dashboard's qualifying-lead bar
+const MIN_ROI_FLOOR = 20; // percent
+
+async function writeDailyReport(doc, sheet, today) {
+  const rows = await sheet.getRows();
+  const todaysRows = rows.filter(
+    (r) => r.get("Status") === "Done" && r.get("Processed Date") === today
+  );
+
+  const leads = todaysRows
+    .map((r) => {
+      const amazonPrice = parseFloat(r.get(AMAZON_PRICE_COLUMN)) || null;
+      const sourcingPrice =
+        parseFloat(r.get("Checkout Verified Price")) || parseFloat(r.get("Best Price Found")) || null;
+      if (amazonPrice == null || sourcingPrice == null) return null;
+      const diff = +(amazonPrice - sourcingPrice).toFixed(2);
+      const roi = sourcingPrice ? +((diff / sourcingPrice) * 100).toFixed(1) : 0;
+      if (diff < MIN_PROFIT_FLOOR && roi < MIN_ROI_FLOOR) return null;
+      const tier = (r.get("Vendor Tier") || "").trim();
+      const score = +(diff + roi * 0.4 + (TIER_POINTS_LOCAL[tier] || 0) * 8).toFixed(1);
+      return {
+        title: r.get("Title") || "",
+        amazonPrice,
+        sourcingPrice,
+        diff,
+        roi,
+        tier: tier || "Unranked",
+        score,
+        sourceLink: r.get("Source Link") || "",
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+
+  if (leads.length === 0) return;
+
+  let reportTab = doc.sheetsByTitle["DailyReports"];
+  if (!reportTab) {
+    reportTab = await doc.addSheet({
+      title: "DailyReports",
+      headerValues: [
+        "Date", "Rank", "Title", "Amazon Price", "Sourcing Price",
+        "Profit", "ROI %", "Vendor Tier", "Score", "Source Link",
+      ],
+    });
+  } else {
+    // This runs multiple times a day (hourly) - clear out today's old
+    // snapshot first so we don't accumulate duplicate rows each run.
+    const existing = await reportTab.getRows();
+    for (const r of existing) {
+      if (r.get("Date") === today) await r.delete();
+    }
+  }
+
+  for (let i = 0; i < leads.length; i++) {
+    const l = leads[i];
+    await reportTab.addRow({
+      Date: today,
+      Rank: i + 1,
+      Title: l.title,
+      "Amazon Price": l.amazonPrice,
+      "Sourcing Price": l.sourcingPrice,
+      Profit: l.diff,
+      "ROI %": l.roi,
+      "Vendor Tier": l.tier,
+      Score: l.score,
+      "Source Link": l.sourceLink,
+    });
+  }
+
+  console.log(`Wrote daily report for ${today}: ${leads.length} lead(s).`);
+}
+
 async function main() {
   const { doc, sheet } = await loadSheet();
   const rows = await sheet.getRows();
   const knownCodes = await loadKnownCodes(doc);
   const vendorTiers = await loadVendorTiers(doc);
+  // S/A tier domains only - keeps the trusted-site list focused on your
+  // most reliable vendors rather than dumping all 90 into every prompt.
+  const trustedDomains = Object.entries(vendorTiers)
+    .filter(([, tier]) => tier === "S" || tier === "A")
+    .map(([domain]) => domain);
+  const archivedAsins = await loadArchivedAsins(doc);
+
+  // Skip anything already checked in a prior batch (now archived) - mark
+  // it so it's visible in the sheet rather than silently ignored, but
+  // don't spend anything re-checking it.
+  for (const row of rows) {
+    const status = (row.get("Status") || "").trim();
+    const asin = (row.get("ASIN") || "").trim();
+    if ((status === "" || status === "Pending") && asin && archivedAsins.has(asin)) {
+      row.set("Status", "Skipped (already checked)");
+      await row.save();
+    }
+  }
+
+  // Skip products too cheap for a "cheaper elsewhere" win to realistically
+  // matter - saves paying for a search on rows that were never going to be
+  // worth pursuing even in the best case.
+  for (const row of rows) {
+    const status = (row.get("Status") || "").trim();
+    const price = parseFloat(row.get(AMAZON_PRICE_COLUMN));
+    if ((status === "" || status === "Pending") && !isNaN(price) && price < minAmazonPrice) {
+      row.set("Status", "Skipped (below profit floor)");
+      await row.save();
+    }
+  }
 
   const today = todayStr();
   const doneToday = rows.filter(
@@ -317,7 +554,7 @@ const MAX_RETRIES = 3;
     await row.save();
 
     try {
-      const result = await findCheaperPrice(anthropic, row);
+      const result = await findCheaperPrice(anthropic, row, trustedDomains);
 
       row.set("Status", "Done");
       row.set("Processed Date", today);
@@ -383,6 +620,8 @@ const MAX_RETRIES = 3;
   }
 
   console.log(`Run complete. Processed ${batch.length} row(s).`);
+  await writeDailyReport(doc, sheet, today);
+  await archiveOldRows(doc, sheet);
   await writeLastRunTimestamp(doc, batch.length);
 }
 
