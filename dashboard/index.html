@@ -61,11 +61,28 @@
   .status-text .value { font-size: 15px; font-weight: 500; }
   .status-meta { margin-left: auto; text-align: right; font-size: 13px; color: var(--muted); }
 
-  .summary-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+  .summary-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 8px; }
   .summary-stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
   .summary-stat .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+  .summary-stat .value-row { display: flex; align-items: baseline; justify-content: space-between; }
   .summary-stat .value { font-size: 24px; font-weight: 700; }
   .summary-stat .value.good { color: var(--good); }
+  .trend-badge { font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 5px; }
+  .trend-badge.up { background: #16352b; color: var(--good); }
+  .trend-badge.down { background: #3a1f1f; color: #f87171; }
+  .trend-badge.flat { background: #232323; color: var(--muted); }
+  .sparkline { margin-top: 8px; height: 28px; }
+
+  .section-label {
+    font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.08em; margin: 22px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  }
+  .section-label:first-of-type { margin-top: 0; }
+
+  .donut-row { display: flex; align-items: center; gap: 20px; }
+  .donut-legend { font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .donut-legend-item { display: flex; align-items: center; gap: 6px; }
+  .donut-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
 
   .buttons { display: flex; gap: 12px; margin-bottom: 24px; }
   .btn {
@@ -78,7 +95,7 @@
   .btn.primary { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
   .btn .sub { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
 
-  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 20px; }
   .chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
   .chart-card h3 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .chart-empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
@@ -137,6 +154,30 @@
   .diag-check .detail { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .diag-close { float: right; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 18px; }
 
+  .day-list-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .day-list-item:last-child { border-bottom: none; }
+  .day-list-item:hover { color: var(--accent); }
+  .day-list-item .count { font-size: 12px; color: var(--muted); }
+  .day-detail-row { display: flex; justify-content: space-between; font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .day-detail-row:last-child { border-bottom: none; }
+  .back-link { font-size: 12px; color: var(--accent); cursor: pointer; margin-bottom: 12px; display: inline-block; }
+
+  .funnel { display: flex; align-items: center; gap: 8px; overflow-x: auto; }
+  .funnel-step { flex: 1; min-width: 100px; text-align: center; }
+  .funnel-step .num { font-size: 22px; font-weight: 700; }
+  .funnel-step .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 2px; }
+  .funnel-step .pct { font-size: 11px; color: var(--accent); margin-top: 2px; }
+  .funnel-arrow { color: var(--muted); font-size: 16px; flex-shrink: 0; }
+
+  .table-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .table-controls select {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 10px; font-size: 12px;
+  }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--text); }
+  th.sortable .arrow { font-size: 9px; margin-left: 3px; opacity: 0.6; }
+
   table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
   thead th {
     text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
@@ -185,20 +226,35 @@
     <div class="status-meta" id="statusMeta"></div>
   </div>
 
+  <div class="section-label">Overview</div>
+
   <div class="summary-bar">
     <div class="summary-stat">
       <div class="label">Total Leads Found</div>
-      <div class="value" id="statLeads">—</div>
+      <div class="value-row">
+        <div class="value" id="statLeads">—</div>
+        <span class="trend-badge flat" id="trendLeads"></span>
+      </div>
+      <div class="sparkline" id="sparkLeads"></div>
     </div>
     <div class="summary-stat">
       <div class="label">Total Potential Profit</div>
-      <div class="value good" id="statProfit">—</div>
+      <div class="value-row">
+        <div class="value good" id="statProfit">—</div>
+        <span class="trend-badge flat" id="trendProfit"></span>
+      </div>
+      <div class="sparkline" id="sparkProfit"></div>
     </div>
     <div class="summary-stat">
       <div class="label">Average ROI</div>
-      <div class="value" id="statRoi">—</div>
+      <div class="value-row">
+        <div class="value" id="statRoi">—</div>
+      </div>
+      <div class="sparkline"></div>
     </div>
   </div>
+
+  <div class="section-label">Sourcing Activity</div>
 
   <div class="buttons">
     <button class="btn primary" id="runOnceBtn" onclick="triggerRun(1, this)">
@@ -211,6 +267,11 @@
     </button>
   </div>
 
+  <div class="rank-card" id="funnelCard">
+    <h3>Where Leads Drop Off</h3>
+    <div id="funnelView"></div>
+  </div>
+
   <div class="charts">
     <div class="chart-card">
       <h3>Leads Found Per Day</h3>
@@ -220,24 +281,50 @@
       <h3>Potential Profit Per Day</h3>
       <div id="profitChart"></div>
     </div>
+    <div class="chart-card">
+      <h3>Hit Rate Trend</h3>
+      <div id="hitRateChart"></div>
+    </div>
   </div>
+
+  <div class="chart-card" style="margin-bottom:20px;">
+    <h3>Leads by Vendor Tier</h3>
+    <div id="tierDonut"></div>
+  </div>
+
+  <div class="section-label">Leads</div>
 
   <div class="rank-card">
     <h3>Top Leads — Ranked by Score (Profit + ROI + Vendor Reliability)</h3>
     <div id="rankList"></div>
   </div>
 
+  <div class="chart-card h3-wrap" style="margin-bottom:10px;">
+    <h3 style="margin:0;">Recent Leads (Last 50 — full history in your Sheet's Archive tab)</h3>
+  </div>
+  <div class="table-controls">
+    <label style="font-size:12px;color:var(--muted);">Filter by tier:</label>
+    <select onchange="setFilterTier(this.value)">
+      <option value="all">All tiers</option>
+      <option value="S">S</option>
+      <option value="A">A</option>
+      <option value="B">B</option>
+      <option value="C">C</option>
+      <option value="D">D</option>
+      <option value="Unranked">Unranked</option>
+    </select>
+  </div>
   <table>
     <thead>
       <tr>
-        <th>Product</th>
-        <th>Amazon Price</th>
-        <th>Sourcing Price</th>
-        <th>Difference</th>
-        <th>Sales Rank</th>
-        <th>Deal Type</th>
+        <th class="sortable" onclick="sortTable('title')">Product</th>
+        <th class="sortable" onclick="sortTable('amazonPrice')">Amazon Price <span class="arrow" id="arrow-amazonPrice"></span></th>
+        <th class="sortable" onclick="sortTable('sourcingPrice')">Sourcing Price <span class="arrow" id="arrow-sourcingPrice"></span></th>
+        <th class="sortable" onclick="sortTable('priceDifference')">Difference <span class="arrow" id="arrow-priceDifference"></span></th>
+        <th class="sortable" onclick="sortTable('vendorTier')">Vendor Tier <span class="arrow" id="arrow-vendorTier"></span></th>
+        <th class="sortable" onclick="sortTable('salesRank')">Sales Rank <span class="arrow" id="arrow-salesRank"></span></th>
         <th>Source</th>
-        <th>Date Found</th>
+        <th class="sortable" onclick="sortTable('dateFound')">Date Found <span class="arrow" id="arrow-dateFound"></span></th>
       </tr>
     </thead>
     <tbody id="tableBody"></tbody>
@@ -247,6 +334,16 @@
 <div class="toast" id="toast"></div>
 
 <a href="#" class="diag-link" onclick="openDiagnostics(); return false;">Diagnostics</a>
+<a href="#" class="diag-link" style="right:110px;" onclick="openDailyReports(); return false;">Daily Reports</a>
+
+<div class="diag-overlay" id="dailyReportsOverlay">
+  <div class="diag-panel">
+    <button class="diag-close" onclick="closeDailyReports()">&times;</button>
+    <h2>Daily Reports</h2>
+    <div class="sub" id="dailyReportsSub">Top 10 leads snapshotted at the end of each day.</div>
+    <div id="dailyReportsBody"></div>
+  </div>
+</div>
 
 <div class="diag-overlay" id="diagOverlay">
   <div class="diag-panel">
@@ -294,6 +391,11 @@
     }
   }
 
+  let currentProducts = [];
+  let sortKey = "priceDifference";
+  let sortDir = -1; // -1 = desc, 1 = asc
+  let filterTier = "all";
+
   function render(data) {
     const dot = document.getElementById("pulseDot");
     const label = document.getElementById("statusLabel");
@@ -315,29 +417,168 @@
     document.getElementById("statProfit").textContent = data.summary ? "$" + data.summary.totalPotentialProfit.toFixed(0) : "—";
     document.getElementById("statRoi").textContent = data.summary ? data.summary.avgRoi + "%" : "—";
 
+    renderTrendBadge("trendLeads", data.trends?.leadsChange);
+    renderTrendBadge("trendProfit", data.trends?.profitChange);
+    renderSparkline("sparkLeads", data.trends?.leadsSparkline, "#5eead4");
+    renderSparkline("sparkProfit", data.trends?.profitSparkline, "#4ade80");
+
+    renderFunnel(data.funnel);
     renderBarChart("leadsChart", data.dailyStats, "leads", "#5eead4", v => v);
     renderBarChart("profitChart", data.dailyStats, "potentialProfit", "#4ade80", v => "$" + v.toFixed(0));
+    renderBarChart("hitRateChart", data.hitRateTrend, "hitRate", "#7dd3fc", v => v.toFixed(0) + "%");
+    renderTierDonut(data.tierBreakdown);
     renderRankList(data.profitRanked);
 
+    currentProducts = data.products || [];
+    renderTable();
+  }
+
+  function renderTrendBadge(elId, change) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (change === null || change === undefined) { el.textContent = ""; return; }
+    const cls = change > 0 ? "up" : (change < 0 ? "down" : "flat");
+    const arrow = change > 0 ? "▲" : (change < 0 ? "▼" : "–");
+    el.className = "trend-badge " + cls;
+    el.textContent = `${arrow} ${Math.abs(change)}%`;
+  }
+
+  function renderSparkline(elId, values, color) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (!values || values.length < 2) { el.innerHTML = ""; return; }
+    const w = 200, h = 28, pad = 2;
+    const max = Math.max(...values, 1);
+    const min = Math.min(...values, 0);
+    const range = max - min || 1;
+    const step = (w - pad * 2) / (values.length - 1);
+    const points = values.map((v, i) => {
+      const x = pad + i * step;
+      const y = h - pad - ((v - min) / range) * (h - pad * 2);
+      return `${x},${y}`;
+    }).join(" ");
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="28" preserveAspectRatio="none">
+      <polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" />
+    </svg>`;
+  }
+
+  function renderTierDonut(breakdown) {
+    const el = document.getElementById("tierDonut");
+    if (!breakdown || breakdown.length === 0) {
+      el.innerHTML = '<div class="chart-empty">No data yet</div>';
+      return;
+    }
+    const colors = { S: "#5eead4", A: "#7dd3fc", B: "#fcd34d", C: "#a3a3a3", D: "#c4b5fd", Unranked: "#4b5563" };
+    const total = breakdown.reduce((s, b) => s + b.count, 0);
+    const size = 140, r = 55, cx = size/2, cy = size/2;
+    let angle = -90;
+    let paths = "";
+    breakdown.forEach(b => {
+      const slice = (b.count / total) * 360;
+      const x1 = cx + r * Math.cos(angle * Math.PI/180);
+      const y1 = cy + r * Math.sin(angle * Math.PI/180);
+      angle += slice;
+      const x2 = cx + r * Math.cos(angle * Math.PI/180);
+      const y2 = cy + r * Math.sin(angle * Math.PI/180);
+      const largeArc = slice > 180 ? 1 : 0;
+      paths += `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc} 1 ${x2},${y2} Z" fill="${colors[b.tier] || '#4b5563'}" stroke="var(--panel)" stroke-width="2" />`;
+    });
+    const legend = breakdown.map(b => `
+      <div class="donut-legend-item">
+        <span class="donut-swatch" style="background:${colors[b.tier] || '#4b5563'}"></span>
+        ${b.tier}: ${b.count}
+      </div>
+    `).join("");
+    el.innerHTML = `
+      <div class="donut-row">
+        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+          <circle cx="${cx}" cy="${cy}" r="${r}" fill="#14171b" />
+          ${paths}
+          <circle cx="${cx}" cy="${cy}" r="${r * 0.55}" fill="var(--panel)" />
+        </svg>
+        <div class="donut-legend">${legend}</div>
+      </div>
+    `;
+  }
+
+  function renderFunnel(funnel) {
+    const el = document.getElementById("funnelView");
+    if (!funnel) { el.innerHTML = '<div class="chart-empty">No data yet</div>'; return; }
+    const steps = [
+      { label: "Searched", num: funnel.searched },
+      { label: "Match Found", num: funnel.matchFound },
+      { label: "Checkout Verified", num: funnel.checkoutVerified },
+      { label: "Worth Pursuing", num: funnel.worthPursuing },
+    ];
+    el.innerHTML = `<div class="funnel">${steps.map((s, i) => {
+      const pct = funnel.searched > 0 ? ((s.num / funnel.searched) * 100).toFixed(0) + "%" : "—";
+      return `
+        <div class="funnel-step">
+          <div class="num">${s.num}</div>
+          <div class="label">${s.label}</div>
+          <div class="pct">${i === 0 ? "" : pct}</div>
+        </div>
+        ${i < steps.length - 1 ? '<div class="funnel-arrow">→</div>' : ""}
+      `;
+    }).join("")}</div>`;
+  }
+
+  function sortTable(key) {
+    if (sortKey === key) {
+      sortDir *= -1;
+    } else {
+      sortKey = key;
+      sortDir = -1;
+    }
+    renderTable();
+  }
+
+  function setFilterTier(val) {
+    filterTier = val;
+    renderTable();
+  }
+
+  function renderTable() {
     const tbody = document.getElementById("tableBody");
-    if (!data.products || data.products.length === 0) {
+    let list = currentProducts;
+    if (filterTier !== "all") {
+      list = list.filter(p => (p.vendorTier || "Unranked") === filterTier);
+    }
+    list = [...list].sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      let cmp;
+      if (typeof av === "string" || typeof bv === "string") {
+        cmp = String(av ?? "").localeCompare(String(bv ?? ""));
+      } else {
+        cmp = (av ?? 0) - (bv ?? 0);
+      }
+      return sortDir === -1 ? -cmp : cmp;
+    });
+
+    document.querySelectorAll("th.sortable .arrow").forEach(a => a.textContent = "");
+    const activeArrow = document.getElementById("arrow-" + sortKey);
+    if (activeArrow) activeArrow.textContent = sortDir === -1 ? "▼" : "▲";
+
+    if (!list || list.length === 0) {
       tbody.innerHTML = '<tr><td colspan="8" class="empty">No deals found yet — check back after the next run.</td></tr>';
       return;
     }
 
-    tbody.innerHTML = data.products.map(p => `
+    tbody.innerHTML = list.map(p => `
       <tr>
         <td>${p.title}</td>
         <td>${fmtMoney(p.amazonPrice)}</td>
         <td>${fmtMoney(p.sourcingPrice)}</td>
         <td class="diff">${fmtMoney(p.priceDifference)}</td>
+        <td><span class="tier-badge tier-${p.vendorTier || 'Unranked'}">${p.vendorTier || 'Unranked'}</span></td>
         <td>${p.salesRank || "—"}</td>
-        <td>${p.vendor || "—"}</td>
         <td>${p.sourceLink ? `<a class="link" href="${p.sourceLink}" target="_blank">View</a>` : "—"}</td>
         <td>${p.dateFound || "—"}</td>
       </tr>
     `).join("");
   }
+
 
   function showLock(err) {
     document.getElementById("app").style.display = "none";
@@ -441,6 +682,58 @@
   }
   function closeDiagnostics() {
     document.getElementById("diagOverlay").classList.remove("show");
+  }
+
+  let dailyReportsCache = null;
+
+  async function openDailyReports() {
+    document.getElementById("dailyReportsOverlay").classList.add("show");
+    const bodyEl = document.getElementById("dailyReportsBody");
+    bodyEl.innerHTML = "Loading...";
+    try {
+      const res = await fetch("/.netlify/functions/get-daily-reports", {
+        headers: adminKey ? { "x-admin-key": adminKey } : {},
+      });
+      const data = await res.json();
+      dailyReportsCache = data.days || [];
+      renderDayList();
+    } catch (err) {
+      bodyEl.innerHTML = `<div class="chart-empty">Could not load: ${err.message}</div>`;
+    }
+  }
+
+  function closeDailyReports() {
+    document.getElementById("dailyReportsOverlay").classList.remove("show");
+  }
+
+  function renderDayList() {
+    const bodyEl = document.getElementById("dailyReportsBody");
+    document.getElementById("dailyReportsSub").textContent = "Top 10 leads snapshotted at the end of each day.";
+    if (!dailyReportsCache || dailyReportsCache.length === 0) {
+      bodyEl.innerHTML = '<div class="chart-empty">No daily reports yet</div>';
+      return;
+    }
+    bodyEl.innerHTML = dailyReportsCache.map((d, i) => `
+      <div class="day-list-item" onclick="renderDayDetail(${i})">
+        <span>${d.date}</span>
+        <span class="count">${d.leadCount} lead(s) →</span>
+      </div>
+    `).join("");
+  }
+
+  function renderDayDetail(index) {
+    const day = dailyReportsCache[index];
+    const bodyEl = document.getElementById("dailyReportsBody");
+    document.getElementById("dailyReportsSub").textContent = day.date;
+    bodyEl.innerHTML = `
+      <div class="back-link" onclick="renderDayList()">&larr; All days</div>
+      ${day.leads.map(l => `
+        <div class="day-detail-row">
+          <span>#${l.rank} ${l.title.length > 30 ? l.title.slice(0,30)+"…" : l.title}</span>
+          <span>${fmtMoney(l.profit)} · ${l.roi ?? "—"}% · ${l.vendorTier}</span>
+        </div>
+      `).join("")}
+    `;
   }
 
   async function runDiagnostics(btnEl) {
