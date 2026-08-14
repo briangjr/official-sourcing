@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Sourcing Dashboard</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root {
     --bg: #f6f7f9;
@@ -373,11 +373,28 @@
     try {
       const res = await apiFetch("get-products");
       if (res.status === 401) { showLock("Incorrect key."); return; }
+      if (!res.ok) {
+        showLock(`Server error (${res.status}) loading data. Check Netlify function logs for get-products.`);
+        return;
+      }
       const data = await res.json();
-      render(data);
+
+      // Reveal the page shell FIRST, before rendering charts/tables - so
+      // even if one piece of rendering fails below, the page is never
+      // blank; worst case, one section shows an error instead of data.
       document.getElementById("lock").style.display = "none";
       document.getElementById("app").style.display = "block";
-    } catch (err) { console.error(err); }
+
+      try {
+        render(data);
+      } catch (renderErr) {
+        console.error("Render error:", renderErr);
+        showToast("Some data failed to display — see browser console for details.");
+      }
+    } catch (err) {
+      console.error("Load error:", err);
+      showLock("Could not reach the dashboard backend: " + err.message);
+    }
   }
 
   function showLock(err) {
@@ -417,13 +434,29 @@
 
     renderFunnel(data.funnel);
     renderRankList(data.profitRanked);
-    renderTierDonut(data.tierBreakdown);
-    renderBarChart("leadsChartCanvas", data.dailyStats, "leads", "#4f46e5", true);
-    renderBarChart("profitChartCanvas", data.dailyStats, "potentialProfit", "#16a34a", true, v => "$" + v);
-    renderBarChart("hitRateChartCanvas", data.hitRateTrend, "hitRate", "#0ea5e9", false, v => v + "%");
+    safeCall(() => renderTierDonut(data.tierBreakdown), "tierDonutCanvas");
+    safeCall(() => renderBarChart("leadsChartCanvas", data.dailyStats, "leads", "#4f46e5", true), "leadsChartCanvas");
+    safeCall(() => renderBarChart("profitChartCanvas", data.dailyStats, "potentialProfit", "#16a34a", true, v => "$" + v), "profitChartCanvas");
+    safeCall(() => renderBarChart("hitRateChartCanvas", data.hitRateTrend, "hitRate", "#0ea5e9", false, v => v + "%"), "hitRateChartCanvas");
 
     currentProducts = data.products || [];
     renderTable();
+  }
+
+  // Runs a chart-render function safely - if Chart.js failed to load (ad
+  // blocker, CDN blocked) or any other error occurs, that one chart shows
+  // a plain message instead of crashing the whole page.
+  function safeCall(fn, canvasId) {
+    try {
+      if (typeof Chart === "undefined") throw new Error("Chart.js did not load");
+      fn();
+    } catch (err) {
+      console.error(`Chart error (${canvasId}):`, err);
+      const el = document.getElementById(canvasId);
+      if (el && el.parentElement) {
+        el.parentElement.innerHTML = '<div class="card-empty">Chart failed to load — see browser console.</div>';
+      }
+    }
   }
 
   function renderTrendBadge(elId, change) {
