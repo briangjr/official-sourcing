@@ -66,7 +66,7 @@ export async function handler(event) {
       .slice(0, 30)
       .map((date) => ({
         date,
-        leadCount: byDate[date].length,
+        leadCount: byDate[date].filter((l) => l.rank > 0).length,
         leads: byDate[date].sort((a, b) => a.rank - b.rank),
       }));
 
