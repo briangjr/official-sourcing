@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/31009780/README.md)
+[README.md](https://github.com/user-attachments/files/31049942/README.md)
 # Amazon Sourcing Tool
 
 Reads a Google Sheet of pre-filtered Keepa candidates (you supply these — this
@@ -84,6 +84,37 @@ both. Adjustable via `MIN_PROFIT_FLOOR` and `MIN_ROI_FLOOR` at the top of
 `netlify/functions/get-products.js` and `scripts/process.js` (kept in sync
 manually since they're two different files/languages-in-spirit but the
 same logic — change both if you adjust this).
+
+## Dashboard v2 — full redesign, tabs, interactive charts
+
+Rebuilt from the ground up: a clean, light, professional theme (not the
+original dark version), organized into tabs — **Overview, Activity,
+Leads, Daily Reports, Diagnostics** — instead of one long scroll. Charts
+now use Chart.js (real hover tooltips, and clicking a bar in the daily
+charts jumps straight to that day's detail in the Daily Reports tab).
+Clicking any lead — in the table or the ranked list — opens a detail
+drawer with everything about that product. Two new buttons: **Stop**
+(cancels anything currently running AND pauses the schedule) and
+**Resume** (re-enables it) — both call the GitHub API directly, same
+credential as Run Once/Run Ten Times.
+
+## Trusted-site search & visibility fixes
+
+- Shortened the trusted-site list to your S-tier vendors only (max 15) —
+  a shorter, higher-confidence list is more likely to actually be
+  followed by a cheaper model than a long one.
+- The model's own "did I match a trusted site" signal is now actually
+  **saved**, in a new **Matched Trusted Site** column — previously this
+  was requested but silently discarded, so there was no way to tell if
+  the strategy was working at all.
+
+## Daily reports — always shows today, even at 0 leads
+
+Previously, a day with zero qualifying leads never got a report entry at
+all, which looked identical to "broken." Now, any day with at least one
+row processed gets an entry — even if it says "0 qualifying leads" — so
+the Daily Reports tab never looks empty/broken when it's actually just
+had a quiet day.
 
 ## Dashboard redesign
 
