@@ -169,10 +169,10 @@ async function findCheaperPrice(anthropic, row, trustedDomains = []) {
 
   const trustedSiteInstruction =
     trustedDomains.length > 0
-      ? `\nCHECK THESE TRUSTED SITES FIRST, before a general web search: ${trustedDomains.join(", ")}.
-Use site-restricted searches (e.g. "site:walmart.com <product title>") against these domains first -
-a match found on one of these is inherently more trustworthy than a random search result. Only fall
-back to an unrestricted general web search if none of these trusted sites have it.\n`
+      ? `\nSTEP 1 (do this first): search ONLY these sites, one at a time, using
+"site:DOMAIN <exact product title>": ${trustedDomains.join(", ")}.
+STEP 2: only if step 1 finds nothing, do one general web search instead.
+A match from step 1 is more trustworthy - always prefer it over a step 2 result.\n`
       : "";
 
   const systemPrompt = `You are checking whether a specific product can be bought cheaper
@@ -424,7 +424,11 @@ async function writeDailyReport(doc, sheet, today) {
     .sort((a, b) => b.score - a.score)
     .slice(0, 10);
 
-  if (leads.length === 0) return;
+  // Only skip entirely if nothing has been processed today at all yet -
+  // once at least one row has run, always write an entry (even "0 leads")
+  // so the Daily Reports panel shows today exists rather than looking
+  // broken/empty.
+  if (todaysRows.length === 0) return;
 
   let reportTab = doc.sheetsByTitle["DailyReports"];
   if (!reportTab) {
@@ -442,6 +446,23 @@ async function writeDailyReport(doc, sheet, today) {
     for (const r of existing) {
       if (r.get("Date") === today) await r.delete();
     }
+  }
+
+  if (leads.length === 0) {
+    await reportTab.addRow({
+      Date: today,
+      Rank: 0,
+      Title: `(${todaysRows.length} checked today, no qualifying leads yet)`,
+      "Amazon Price": "",
+      "Sourcing Price": "",
+      Profit: "",
+      "ROI %": "",
+      "Vendor Tier": "",
+      Score: "",
+      "Source Link": "",
+    });
+    console.log(`Wrote daily report for ${today}: 0 qualifying leads (${todaysRows.length} checked).`);
+    return;
   }
 
   for (let i = 0; i < leads.length; i++) {
@@ -468,11 +489,13 @@ async function main() {
   const rows = await sheet.getRows();
   const knownCodes = await loadKnownCodes(doc);
   const vendorTiers = await loadVendorTiers(doc);
-  // S/A tier domains only - keeps the trusted-site list focused on your
-  // most reliable vendors rather than dumping all 90 into every prompt.
+  // S-tier only, and capped to 15 - a shorter, higher-confidence list is
+  // more likely to actually be followed by a cheaper model than a long
+  // one. Widen back to S+A later if S-tier alone proves reliable.
   const trustedDomains = Object.entries(vendorTiers)
-    .filter(([, tier]) => tier === "S" || tier === "A")
-    .map(([domain]) => domain);
+    .filter(([, tier]) => tier === "S")
+    .map(([domain]) => domain)
+    .slice(0, 15);
   const archivedAsins = await loadArchivedAsins(doc);
 
   // Skip anything already checked in a prior batch (now archived) - mark
@@ -567,6 +590,7 @@ const MAX_RETRIES = 3;
 
       const domain = getDomain(result.source_link || "");
       row.set("Vendor Tier", vendorTiers[domain] || "Unranked");
+      row.set("Matched Trusted Site", result.matched_trusted_site === true ? "Yes" : "No");
 
       // Second pass: if the search step found a promising lead (a coupon or
       // sale, with an actual link to check), verify it with a real checkout
