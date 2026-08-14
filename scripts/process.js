@@ -366,7 +366,16 @@ async function archiveOldRows(doc, sheet) {
       seenCount++;
     } else {
       if (!archive) {
-        archive = await doc.addSheet({ title: "Archive", headerValues: headers });
+        // Explicit gridProperties needed - a new Google Sheet tab only
+        // gets ~26 columns by default, but Sheet1 (and therefore this
+        // header set) has grown to 192 columns. Without this, the very
+        // first archive attempt fails outright with "Sheet is not large
+        // enough."
+        archive = await doc.addSheet({
+          title: "Archive",
+          headerValues: headers,
+          gridProperties: { columnCount: headers.length + 10, rowCount: 2000 },
+        });
       }
       const rowData = {};
       headers.forEach((h) => (rowData[h] = row.get(h) || ""));
