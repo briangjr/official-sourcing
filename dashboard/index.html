@@ -4,16 +4,21 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Sourcing Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <style>
   :root {
-    --bg: #0b0d10;
-    --panel: #14171b;
-    --border: #23272d;
-    --text: #e6e8eb;
-    --muted: #8b929c;
-    --accent: #5eead4;
-    --accent-dim: #234a44;
-    --good: #4ade80;
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #e6e8ec;
+    --text: #14161a;
+    --muted: #6b7280;
+    --accent: #4f46e5;
+    --accent-soft: #eef2ff;
+    --good: #16a34a;
+    --good-soft: #ecfdf3;
+    --bad: #dc2626;
+    --bad-soft: #fef2f2;
+    --radius: 10px;
   }
   * { box-sizing: border-box; }
   body {
@@ -21,186 +26,157 @@
     background: var(--bg);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
-    padding: 32px;
+    -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 1100px; margin: 0 auto; }
-  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-  h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 24px 80px; }
 
-  .status-card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px 24px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 24px;
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  h1 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 22px; }
+  .tab-btn {
+    background: none; border: none; padding: 10px 16px; font-size: 13.5px; font-weight: 600;
+    color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
   }
-  .pulse-dot {
-    position: relative;
-    width: 14px; height: 14px;
-    border-radius: 50%;
-    background: var(--muted);
-    flex-shrink: 0;
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-btn:hover { color: var(--text); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);
   }
-  .pulse-dot.active { background: var(--accent); }
+  .card h3 { margin: 0 0 12px; font-size: 12.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .card-empty { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
+
+  .status-card { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+  .pulse-dot { position: relative; width: 10px; height: 10px; border-radius: 50%; background: #d1d5db; flex-shrink: 0; }
+  .pulse-dot.active { background: var(--good); }
   .pulse-dot.active::after {
-    content: "";
-    position: absolute;
-    inset: -6px;
-    border-radius: 50%;
-    border: 2px solid var(--accent);
-    animation: pulse 1.6s ease-out infinite;
+    content: ""; position: absolute; inset: -5px; border-radius: 50%;
+    border: 2px solid var(--good); animation: pulse 1.6s ease-out infinite;
   }
-  @keyframes pulse {
-    0% { transform: scale(0.6); opacity: 0.9; }
-    100% { transform: scale(1.8); opacity: 0; }
-  }
-  .status-text .label { font-size: 13px; color: var(--muted); margin-bottom: 2px; }
-  .status-text .value { font-size: 15px; font-weight: 500; }
-  .status-meta { margin-left: auto; text-align: right; font-size: 13px; color: var(--muted); }
+  @keyframes pulse { 0% { transform: scale(0.6); opacity: 0.9; } 100% { transform: scale(1.9); opacity: 0; } }
+  .status-text .label { font-size: 12.5px; color: var(--muted); }
+  .status-text .value { font-size: 14px; font-weight: 600; }
+  .status-meta { margin-left: auto; font-size: 12.5px; color: var(--muted); text-align: right; }
 
-  .summary-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 8px; }
-  .summary-stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
-  .summary-stat .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
-  .summary-stat .value-row { display: flex; align-items: baseline; justify-content: space-between; }
-  .summary-stat .value { font-size: 24px; font-weight: 700; }
-  .summary-stat .value.good { color: var(--good); }
-  .trend-badge { font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 5px; }
-  .trend-badge.up { background: #16352b; color: var(--good); }
-  .trend-badge.down { background: #3a1f1f; color: #f87171; }
-  .trend-badge.flat { background: #232323; color: var(--muted); }
-  .sparkline { margin-top: 8px; height: 28px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .grid-2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; }
+  .stack { display: flex; flex-direction: column; gap: 14px; }
 
-  .section-label {
-    font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;
-    letter-spacing: 0.08em; margin: 22px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
-  }
-  .section-label:first-of-type { margin-top: 0; }
+  .kpi .value-row { display: flex; align-items: baseline; justify-content: space-between; }
+  .kpi .value { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+  .kpi .value.good { color: var(--good); }
+  .trend-badge { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 20px; }
+  .trend-badge.up { background: var(--good-soft); color: var(--good); }
+  .trend-badge.down { background: var(--bad-soft); color: var(--bad); }
+  .trend-badge.flat { background: #f3f4f6; color: var(--muted); }
+  .sparkline { margin-top: 10px; height: 30px; cursor: pointer; }
 
-  .donut-row { display: flex; align-items: center; gap: 20px; }
-  .donut-legend { font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
-  .donut-legend-item { display: flex; align-items: center; gap: 6px; }
-  .donut-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
-
-  .buttons { display: flex; gap: 12px; margin-bottom: 24px; }
+  .buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
   .btn {
-    flex: 1; padding: 14px; border-radius: 10px; border: 1px solid var(--border);
-    background: var(--panel); color: var(--text); font-size: 14px; font-weight: 600;
-    cursor: pointer; transition: background 0.15s;
+    padding: 11px 16px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s;
   }
-  .btn:hover { background: #1b2026; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn.primary { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
-  .btn .sub { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { opacity: 0.92; color: #fff; }
+  .btn.danger { color: var(--bad); border-color: #fecaca; }
+  .btn.danger:hover { background: var(--bad-soft); border-color: var(--bad); }
+  .btn .sub { display: block; font-size: 11px; font-weight: 400; color: var(--muted); margin-top: 2px; }
 
-  .charts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 20px; }
-  .chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
-  .chart-card h3 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-  .chart-empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
-  .bar-label { font-size: 10px; fill: var(--muted); }
-  .bar-value { font-size: 10px; fill: var(--text); }
+  .chart-box { position: relative; height: 200px; }
+  .donut-box { position: relative; height: 180px; }
 
-  .rank-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 24px; }
-  .rank-card h3 { margin: 0 0 14px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-  .rank-row { display: grid; grid-template-columns: 200px 1fr 70px; align-items: center; gap: 12px; padding: 7px 0; }
-  .rank-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
-  .rank-bar-track { background: #1c2127; border-radius: 6px; height: 20px; overflow: hidden; }
-  .rank-bar-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--accent-dim), var(--accent)); }
-  .rank-value { font-size: 12px; color: var(--muted); text-align: right; }
-  .tier-badge {
-    font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; flex-shrink: 0;
+  .funnel { display: flex; align-items: center; gap: 6px; overflow-x: auto; }
+  .funnel-step { flex: 1; min-width: 100px; text-align: center; cursor: default; }
+  .funnel-step .num { font-size: 20px; font-weight: 700; }
+  .funnel-step .flabel { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 2px; }
+  .funnel-step .pct { font-size: 11px; color: var(--accent); font-weight: 600; margin-top: 2px; }
+  .funnel-arrow { color: #d1d5db; font-size: 15px; flex-shrink: 0; }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--border); font-weight: 700;
   }
-  .tier-S { background: #234a44; color: #5eead4; }
-  .tier-A { background: #1e3a5f; color: #7dd3fc; }
-  .tier-B { background: #3a3320; color: #fcd34d; }
-  .tier-C { background: #2a2a2a; color: #a3a3a3; }
-  .tier-D { background: #2a1f3a; color: #c4b5fd; }
-  .tier-Unranked { background: #232323; color: #6b7280; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--text); }
+  th.sortable .arrow { font-size: 9px; margin-left: 3px; }
+  tbody td { padding: 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #fafafa; }
+  .diff { color: var(--good); font-weight: 700; }
+  a.link { color: var(--accent); text-decoration: none; }
+  a.link:hover { text-decoration: underline; }
 
-  .toast {
-    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-    background: var(--panel); border: 1px solid var(--accent); color: var(--text);
-    padding: 12px 20px; border-radius: 8px; font-size: 13px; opacity: 0; pointer-events: none;
-    transition: opacity 0.2s;
-  }
-  .toast.show { opacity: 1; }
+  .tier-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; }
+  .tier-S { background: #ecfdf5; color: #059669; }
+  .tier-A { background: #eff6ff; color: #2563eb; }
+  .tier-B { background: #fffbeb; color: #b45309; }
+  .tier-C { background: #f3f4f6; color: #6b7280; }
+  .tier-D { background: #f5f3ff; color: #7c3aed; }
+  .tier-Unranked { background: #f3f4f6; color: #9ca3af; }
 
-  .diag-link {
-    position: fixed; bottom: 16px; right: 20px; font-size: 11px; color: var(--muted);
-    text-decoration: none; opacity: 0.6;
-  }
-  .diag-link:hover { opacity: 1; }
-
-  .diag-overlay {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
-    align-items: center; justify-content: center; z-index: 50;
-  }
-  .diag-overlay.show { display: flex; }
-  .diag-panel {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 24px; width: 480px; max-width: 90vw; max-height: 80vh; overflow-y: auto;
-  }
-  .diag-panel h2 { margin: 0 0 4px; font-size: 16px; }
-  .diag-panel .sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
-  .diag-check { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
-  .diag-check:last-child { border-bottom: none; }
-  .diag-icon { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; }
-  .diag-icon.pass { background: var(--good); }
-  .diag-icon.warn { background: #fbbf24; }
-  .diag-icon.fail { background: #f87171; }
-  .diag-check .name { font-size: 13px; font-weight: 600; }
-  .diag-check .detail { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .diag-close { float: right; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 18px; }
-
-  .day-list-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
-  .day-list-item:last-child { border-bottom: none; }
-  .day-list-item:hover { color: var(--accent); }
-  .day-list-item .count { font-size: 12px; color: var(--muted); }
-  .day-detail-row { display: flex; justify-content: space-between; font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
-  .day-detail-row:last-child { border-bottom: none; }
-  .back-link { font-size: 12px; color: var(--accent); cursor: pointer; margin-bottom: 12px; display: inline-block; }
-
-  .funnel { display: flex; align-items: center; gap: 8px; overflow-x: auto; }
-  .funnel-step { flex: 1; min-width: 100px; text-align: center; }
-  .funnel-step .num { font-size: 22px; font-weight: 700; }
-  .funnel-step .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 2px; }
-  .funnel-step .pct { font-size: 11px; color: var(--accent); margin-top: 2px; }
-  .funnel-arrow { color: var(--muted); font-size: 16px; flex-shrink: 0; }
-
-  .table-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .table-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
   .table-controls select {
     background: var(--panel); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 6px 10px; font-size: 12px;
   }
-  th.sortable { cursor: pointer; user-select: none; }
-  th.sortable:hover { color: var(--text); }
-  th.sortable .arrow { font-size: 9px; margin-left: 3px; opacity: 0.6; }
 
-  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-  thead th {
-    text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
-    color: var(--muted); padding: 12px 16px; border-bottom: 1px solid var(--border);
+  .drawer-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,17,21,0.4); z-index: 60;
+    align-items: flex-start; justify-content: flex-end;
   }
-  tbody td { padding: 14px 16px; border-bottom: 1px solid var(--border); font-size: 14px; }
-  tbody tr:last-child td { border-bottom: none; }
-  tbody tr:hover { background: #181c21; }
-  .diff { color: var(--good); font-weight: 600; }
-  a.link { color: var(--accent); text-decoration: none; }
-  a.link:hover { text-decoration: underline; }
-  .empty { text-align: center; padding: 48px; color: var(--muted); }
+  .drawer-overlay.show { display: flex; }
+  .drawer {
+    background: var(--panel); width: 380px; max-width: 90vw; height: 100%; padding: 24px;
+    overflow-y: auto; box-shadow: -8px 0 24px rgba(0,0,0,0.08);
+  }
+  .drawer h2 { font-size: 16px; margin: 0 0 4px; }
+  .drawer .close { float: right; background: none; border: none; font-size: 20px; cursor: pointer; color: var(--muted); }
+  .drawer-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .drawer-row .k { color: var(--muted); }
 
-  .lock-wrap { max-width: 360px; margin: 120px auto; text-align: center; }
+  .day-list-item { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .day-list-item:hover { color: var(--accent); }
+  .day-list-item .count { font-size: 12px; color: var(--muted); }
+  .back-link { font-size: 12px; color: var(--accent); cursor: pointer; margin-bottom: 12px; display: inline-block; }
+
+  .diag-check { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .diag-check:last-child { border-bottom: none; }
+  .diag-icon { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; }
+  .diag-icon.pass { background: var(--good); }
+  .diag-icon.warn { background: #f59e0b; }
+  .diag-icon.fail { background: var(--bad); }
+  .diag-check .name { font-size: 13px; font-weight: 600; }
+  .diag-check .detail { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #14161a; color: #fff; padding: 11px 18px; border-radius: 8px; font-size: 13px;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+
+  .lock-wrap { max-width: 340px; margin: 140px auto; text-align: center; }
   .lock-wrap input {
-    width: 100%; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border);
+    width: 100%; padding: 11px 14px; border-radius: 8px; border: 1px solid var(--border);
     background: var(--panel); color: var(--text); font-size: 14px; margin: 16px 0;
   }
   .lock-wrap button {
-    width: 100%; padding: 12px; border-radius: 8px; border: none;
-    background: var(--accent); color: #06201c; font-weight: 600; cursor: pointer;
+    width: 100%; padding: 11px; border-radius: 8px; border: none;
+    background: var(--accent); color: #fff; font-weight: 600; cursor: pointer;
   }
-  .lock-error { color: #f87171; font-size: 13px; margin-top: 8px; min-height: 16px; }
+  .lock-error { color: var(--bad); font-size: 13px; margin-top: 8px; min-height: 16px; }
+
+  @media (max-width: 800px) {
+    .grid-3, .grid-2 { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -226,175 +202,194 @@
     <div class="status-meta" id="statusMeta"></div>
   </div>
 
-  <div class="section-label">Overview</div>
-
-  <div class="summary-bar">
-    <div class="summary-stat">
-      <div class="label">Total Leads Found</div>
-      <div class="value-row">
-        <div class="value" id="statLeads">—</div>
-        <span class="trend-badge flat" id="trendLeads"></span>
-      </div>
-      <div class="sparkline" id="sparkLeads"></div>
-    </div>
-    <div class="summary-stat">
-      <div class="label">Total Potential Profit</div>
-      <div class="value-row">
-        <div class="value good" id="statProfit">—</div>
-        <span class="trend-badge flat" id="trendProfit"></span>
-      </div>
-      <div class="sparkline" id="sparkProfit"></div>
-    </div>
-    <div class="summary-stat">
-      <div class="label">Average ROI</div>
-      <div class="value-row">
-        <div class="value" id="statRoi">—</div>
-      </div>
-      <div class="sparkline"></div>
-    </div>
-  </div>
-
-  <div class="section-label">Sourcing Activity</div>
-
   <div class="buttons">
-    <button class="btn primary" id="runOnceBtn" onclick="triggerRun(1, this)">
-      Run Once
-      <span class="sub">One scheduled-size run (~10 products)</span>
-    </button>
-    <button class="btn" id="runTenBtn" onclick="triggerRun(10, this)">
-      Run Ten Times
-      <span class="sub">Processes up to 100 products in one go</span>
-    </button>
+    <button class="btn primary" onclick="triggerRun(1, this)">Run Once<span class="sub">~10 products</span></button>
+    <button class="btn" onclick="triggerRun(10, this)">Run Ten Times<span class="sub">~100 products</span></button>
+    <button class="btn danger" onclick="stopRun(this)">Stop<span class="sub">Cancel + pause schedule</span></button>
+    <button class="btn" onclick="resumeRun(this)">Resume<span class="sub">Re-enable schedule</span></button>
   </div>
 
-  <div class="rank-card" id="funnelCard">
-    <h3>Where Leads Drop Off</h3>
-    <div id="funnelView"></div>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('overview', this)">Overview</button>
+    <button class="tab-btn" onclick="showTab('activity', this)">Activity</button>
+    <button class="tab-btn" onclick="showTab('leads', this)">Leads</button>
+    <button class="tab-btn" onclick="showTab('reports', this)">Daily Reports</button>
+    <button class="tab-btn" onclick="showTab('diagnostics', this)">Diagnostics</button>
   </div>
 
-  <div class="charts">
-    <div class="chart-card">
-      <h3>Leads Found Per Day</h3>
-      <div id="leadsChart"></div>
+  <!-- OVERVIEW -->
+  <div class="tab-panel active" id="tab-overview">
+    <div class="grid-3" style="margin-bottom:14px;">
+      <div class="card kpi">
+        <h3>Total Leads Found</h3>
+        <div class="value-row"><div class="value" id="statLeads">—</div><span class="trend-badge flat" id="trendLeads"></span></div>
+        <div class="sparkline" id="sparkLeads" onclick="showTab('activity', document.querySelectorAll('.tab-btn')[1])"></div>
+      </div>
+      <div class="card kpi">
+        <h3>Total Potential Profit</h3>
+        <div class="value-row"><div class="value good" id="statProfit">—</div><span class="trend-badge flat" id="trendProfit"></span></div>
+        <div class="sparkline" id="sparkProfit" onclick="showTab('activity', document.querySelectorAll('.tab-btn')[1])"></div>
+      </div>
+      <div class="card kpi">
+        <h3>Average ROI</h3>
+        <div class="value-row"><div class="value" id="statRoi">—</div></div>
+        <div class="sparkline"></div>
+      </div>
     </div>
-    <div class="chart-card">
-      <h3>Potential Profit Per Day</h3>
-      <div id="profitChart"></div>
+
+    <div class="card" style="margin-bottom:14px;">
+      <h3>Where Leads Drop Off</h3>
+      <div id="funnelView"></div>
     </div>
-    <div class="chart-card">
-      <h3>Hit Rate Trend</h3>
-      <div id="hitRateChart"></div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>Top Leads — Ranked by Score</h3>
+        <div id="rankList"></div>
+      </div>
+      <div class="card">
+        <h3>Leads by Vendor Tier</h3>
+        <div class="donut-box"><canvas id="tierDonutCanvas"></canvas></div>
+      </div>
     </div>
   </div>
 
-  <div class="chart-card" style="margin-bottom:20px;">
-    <h3>Leads by Vendor Tier</h3>
-    <div id="tierDonut"></div>
+  <!-- ACTIVITY -->
+  <div class="tab-panel" id="tab-activity">
+    <div class="stack">
+      <div class="card">
+        <h3>Leads Found Per Day <span style="font-weight:400;text-transform:none;color:var(--muted);">(click a bar to see that day)</span></h3>
+        <div class="chart-box"><canvas id="leadsChartCanvas"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Potential Profit Per Day</h3>
+        <div class="chart-box"><canvas id="profitChartCanvas"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Hit Rate Trend</h3>
+        <div class="chart-box"><canvas id="hitRateChartCanvas"></canvas></div>
+      </div>
+    </div>
   </div>
 
-  <div class="section-label">Leads</div>
-
-  <div class="rank-card">
-    <h3>Top Leads — Ranked by Score (Profit + ROI + Vendor Reliability)</h3>
-    <div id="rankList"></div>
+  <!-- LEADS -->
+  <div class="tab-panel" id="tab-leads">
+    <div class="card">
+      <h3>Recent Leads (Last 50) <span style="font-weight:400;text-transform:none;color:var(--muted);">— click a row for details</span></h3>
+      <div class="table-controls">
+        <label style="font-size:12px;color:var(--muted);">Filter by tier:</label>
+        <select onchange="setFilterTier(this.value)">
+          <option value="all">All tiers</option>
+          <option value="S">S</option><option value="A">A</option><option value="B">B</option>
+          <option value="C">C</option><option value="D">D</option><option value="Unranked">Unranked</option>
+        </select>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th class="sortable" onclick="sortTable('title')">Product</th>
+            <th class="sortable" onclick="sortTable('amazonPrice')">Amazon <span class="arrow" id="arrow-amazonPrice"></span></th>
+            <th class="sortable" onclick="sortTable('sourcingPrice')">Sourcing <span class="arrow" id="arrow-sourcingPrice"></span></th>
+            <th class="sortable" onclick="sortTable('priceDifference')">Profit <span class="arrow" id="arrow-priceDifference"></span></th>
+            <th class="sortable" onclick="sortTable('vendorTier')">Tier <span class="arrow" id="arrow-vendorTier"></span></th>
+            <th class="sortable" onclick="sortTable('dateFound')">Date <span class="arrow" id="arrow-dateFound"></span></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
   </div>
 
-  <div class="chart-card h3-wrap" style="margin-bottom:10px;">
-    <h3 style="margin:0;">Recent Leads (Last 50 — full history in your Sheet's Archive tab)</h3>
+  <!-- REPORTS -->
+  <div class="tab-panel" id="tab-reports">
+    <div class="card">
+      <h3 id="dailyReportsSub">Daily Reports</h3>
+      <div id="dailyReportsBody">Loading...</div>
+    </div>
   </div>
-  <div class="table-controls">
-    <label style="font-size:12px;color:var(--muted);">Filter by tier:</label>
-    <select onchange="setFilterTier(this.value)">
-      <option value="all">All tiers</option>
-      <option value="S">S</option>
-      <option value="A">A</option>
-      <option value="B">B</option>
-      <option value="C">C</option>
-      <option value="D">D</option>
-      <option value="Unranked">Unranked</option>
-    </select>
+
+  <!-- DIAGNOSTICS -->
+  <div class="tab-panel" id="tab-diagnostics">
+    <div class="card">
+      <h3>System Diagnostics</h3>
+      <p style="font-size:12.5px;color:var(--muted);margin-top:-6px;">Free to run — no AI usage, just connection checks.</p>
+      <button class="btn primary" style="margin-bottom:16px;" onclick="runDiagnostics(this)">Run Health Check</button>
+      <div id="diagResults"></div>
+    </div>
   </div>
-  <table>
-    <thead>
-      <tr>
-        <th class="sortable" onclick="sortTable('title')">Product</th>
-        <th class="sortable" onclick="sortTable('amazonPrice')">Amazon Price <span class="arrow" id="arrow-amazonPrice"></span></th>
-        <th class="sortable" onclick="sortTable('sourcingPrice')">Sourcing Price <span class="arrow" id="arrow-sourcingPrice"></span></th>
-        <th class="sortable" onclick="sortTable('priceDifference')">Difference <span class="arrow" id="arrow-priceDifference"></span></th>
-        <th class="sortable" onclick="sortTable('vendorTier')">Vendor Tier <span class="arrow" id="arrow-vendorTier"></span></th>
-        <th class="sortable" onclick="sortTable('salesRank')">Sales Rank <span class="arrow" id="arrow-salesRank"></span></th>
-        <th>Source</th>
-        <th class="sortable" onclick="sortTable('dateFound')">Date Found <span class="arrow" id="arrow-dateFound"></span></th>
-      </tr>
-    </thead>
-    <tbody id="tableBody"></tbody>
-  </table>
+</div>
+
+<div class="drawer-overlay" id="drawerOverlay" onclick="if(event.target===this) closeDrawer()">
+  <div class="drawer">
+    <button class="close" onclick="closeDrawer()">&times;</button>
+    <h2 id="drawerTitle">Product</h2>
+    <div id="drawerBody"></div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
-<a href="#" class="diag-link" onclick="openDiagnostics(); return false;">Diagnostics</a>
-<a href="#" class="diag-link" style="right:110px;" onclick="openDailyReports(); return false;">Daily Reports</a>
-
-<div class="diag-overlay" id="dailyReportsOverlay">
-  <div class="diag-panel">
-    <button class="diag-close" onclick="closeDailyReports()">&times;</button>
-    <h2>Daily Reports</h2>
-    <div class="sub" id="dailyReportsSub">Top 10 leads snapshotted at the end of each day.</div>
-    <div id="dailyReportsBody"></div>
-  </div>
-</div>
-
-<div class="diag-overlay" id="diagOverlay">
-  <div class="diag-panel">
-    <button class="diag-close" onclick="closeDiagnostics()">&times;</button>
-    <h2>System Diagnostics</h2>
-    <div class="sub">Free to run — no AI usage, just connection checks.</div>
-    <button class="btn primary" style="margin-bottom:16px;" onclick="runDiagnostics(this)">Run Health Check</button>
-    <div id="diagResults"></div>
-  </div>
-</div>
-
 <script>
-  const FUNCTION_URL = "/.netlify/functions/get-products";
+  const FUNCTION_BASE = "/.netlify/functions/";
   let adminKey = localStorage.getItem("dashboardAdminKey") || "";
+  let currentProducts = [];
+  let sortKey = "priceDifference";
+  let sortDir = -1;
+  let filterTier = "all";
+  let dailyReportsCache = null;
+  let charts = {};
 
-  function fmtMoney(v) {
-    return v == null ? "—" : "$" + Number(v).toFixed(2);
-  }
-
-  function timeAgo(isoString) {
-    const diffMs = Date.now() - new Date(isoString).getTime();
-    const mins = Math.round(diffMs / 60000);
+  function fmtMoney(v) { return v == null ? "—" : "$" + Number(v).toFixed(2); }
+  function timeAgo(iso) {
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
     if (mins < 1) return "just now";
     if (mins < 60) return mins + "m ago";
-    const hours = Math.round(mins / 60);
-    if (hours < 24) return hours + "h ago";
-    return Math.round(hours / 24) + "d ago";
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return hrs + "h ago";
+    return Math.round(hrs / 24) + "d ago";
+  }
+
+  function showTab(name, btnEl) {
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.getElementById("tab-" + name).classList.add("active");
+    if (btnEl) btnEl.classList.add("active");
+    if (name === "reports" && !dailyReportsCache) loadDailyReports();
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 3500);
+  }
+
+  async function apiFetch(fn, opts = {}) {
+    const headers = { ...(opts.headers || {}), ...(adminKey ? { "x-admin-key": adminKey } : {}) };
+    return fetch(FUNCTION_BASE + fn, { ...opts, headers });
   }
 
   async function loadData() {
     try {
-      const res = await fetch(FUNCTION_URL, {
-        headers: adminKey ? { "x-admin-key": adminKey } : {},
-      });
-      if (res.status === 401) {
-        showLock("Incorrect key.");
-        return;
-      }
+      const res = await apiFetch("get-products");
+      if (res.status === 401) { showLock("Incorrect key."); return; }
       const data = await res.json();
       render(data);
       document.getElementById("lock").style.display = "none";
       document.getElementById("app").style.display = "block";
-    } catch (err) {
-      console.error(err);
-    }
+    } catch (err) { console.error(err); }
   }
 
-  let currentProducts = [];
-  let sortKey = "priceDifference";
-  let sortDir = -1; // -1 = desc, 1 = asc
-  let filterTier = "all";
+  function showLock(err) {
+    document.getElementById("app").style.display = "none";
+    document.getElementById("lock").style.display = "block";
+    document.getElementById("lockError").textContent = err || "";
+  }
+  function unlock() {
+    adminKey = document.getElementById("adminKeyInput").value;
+    localStorage.setItem("dashboardAdminKey", adminKey);
+    loadData();
+  }
 
   function render(data) {
     const dot = document.getElementById("pulseDot");
@@ -403,15 +398,13 @@
     const meta = document.getElementById("statusMeta");
 
     if (data.isActive) {
-      dot.classList.add("active");
-      label.textContent = "Currently sourcing";
+      dot.classList.add("active"); label.textContent = "Currently sourcing";
       value.textContent = data.currentlyChecking || "Working...";
     } else {
-      dot.classList.remove("active");
-      label.textContent = "Idle";
+      dot.classList.remove("active"); label.textContent = "Idle";
       value.textContent = "Waiting for next scheduled run";
     }
-    meta.textContent = data.pendingCount + " pending in queue" + (data.lastRun ? " · Last checked " + timeAgo(data.lastRun) : "");
+    meta.textContent = data.pendingCount + " pending" + (data.lastRun ? " · Last checked " + timeAgo(data.lastRun) : "");
 
     document.getElementById("statLeads").textContent = data.summary?.totalLeads ?? "—";
     document.getElementById("statProfit").textContent = data.summary ? "$" + data.summary.totalPotentialProfit.toFixed(0) : "—";
@@ -419,15 +412,15 @@
 
     renderTrendBadge("trendLeads", data.trends?.leadsChange);
     renderTrendBadge("trendProfit", data.trends?.profitChange);
-    renderSparkline("sparkLeads", data.trends?.leadsSparkline, "#5eead4");
-    renderSparkline("sparkProfit", data.trends?.profitSparkline, "#4ade80");
+    renderSparkline("sparkLeads", data.trends?.leadsSparkline, "#4f46e5");
+    renderSparkline("sparkProfit", data.trends?.profitSparkline, "#16a34a");
 
     renderFunnel(data.funnel);
-    renderBarChart("leadsChart", data.dailyStats, "leads", "#5eead4", v => v);
-    renderBarChart("profitChart", data.dailyStats, "potentialProfit", "#4ade80", v => "$" + v.toFixed(0));
-    renderBarChart("hitRateChart", data.hitRateTrend, "hitRate", "#7dd3fc", v => v.toFixed(0) + "%");
-    renderTierDonut(data.tierBreakdown);
     renderRankList(data.profitRanked);
+    renderTierDonut(data.tierBreakdown);
+    renderBarChart("leadsChartCanvas", data.dailyStats, "leads", "#4f46e5", true);
+    renderBarChart("profitChartCanvas", data.dailyStats, "potentialProfit", "#16a34a", true, v => "$" + v);
+    renderBarChart("hitRateChartCanvas", data.hitRateTrend, "hitRate", "#0ea5e9", false, v => v + "%");
 
     currentProducts = data.products || [];
     renderTable();
@@ -447,63 +440,17 @@
     const el = document.getElementById(elId);
     if (!el) return;
     if (!values || values.length < 2) { el.innerHTML = ""; return; }
-    const w = 200, h = 28, pad = 2;
-    const max = Math.max(...values, 1);
-    const min = Math.min(...values, 0);
+    const w = 200, h = 30, pad = 2;
+    const max = Math.max(...values, 1), min = Math.min(...values, 0);
     const range = max - min || 1;
     const step = (w - pad * 2) / (values.length - 1);
-    const points = values.map((v, i) => {
-      const x = pad + i * step;
-      const y = h - pad - ((v - min) / range) * (h - pad * 2);
-      return `${x},${y}`;
-    }).join(" ");
-    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="28" preserveAspectRatio="none">
-      <polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" />
-    </svg>`;
-  }
-
-  function renderTierDonut(breakdown) {
-    const el = document.getElementById("tierDonut");
-    if (!breakdown || breakdown.length === 0) {
-      el.innerHTML = '<div class="chart-empty">No data yet</div>';
-      return;
-    }
-    const colors = { S: "#5eead4", A: "#7dd3fc", B: "#fcd34d", C: "#a3a3a3", D: "#c4b5fd", Unranked: "#4b5563" };
-    const total = breakdown.reduce((s, b) => s + b.count, 0);
-    const size = 140, r = 55, cx = size/2, cy = size/2;
-    let angle = -90;
-    let paths = "";
-    breakdown.forEach(b => {
-      const slice = (b.count / total) * 360;
-      const x1 = cx + r * Math.cos(angle * Math.PI/180);
-      const y1 = cy + r * Math.sin(angle * Math.PI/180);
-      angle += slice;
-      const x2 = cx + r * Math.cos(angle * Math.PI/180);
-      const y2 = cy + r * Math.sin(angle * Math.PI/180);
-      const largeArc = slice > 180 ? 1 : 0;
-      paths += `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc} 1 ${x2},${y2} Z" fill="${colors[b.tier] || '#4b5563'}" stroke="var(--panel)" stroke-width="2" />`;
-    });
-    const legend = breakdown.map(b => `
-      <div class="donut-legend-item">
-        <span class="donut-swatch" style="background:${colors[b.tier] || '#4b5563'}"></span>
-        ${b.tier}: ${b.count}
-      </div>
-    `).join("");
-    el.innerHTML = `
-      <div class="donut-row">
-        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-          <circle cx="${cx}" cy="${cy}" r="${r}" fill="#14171b" />
-          ${paths}
-          <circle cx="${cx}" cy="${cy}" r="${r * 0.55}" fill="var(--panel)" />
-        </svg>
-        <div class="donut-legend">${legend}</div>
-      </div>
-    `;
+    const points = values.map((v, i) => `${pad + i * step},${h - pad - ((v - min) / range) * (h - pad * 2)}`).join(" ");
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="30" preserveAspectRatio="none"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>`;
   }
 
   function renderFunnel(funnel) {
     const el = document.getElementById("funnelView");
-    if (!funnel) { el.innerHTML = '<div class="chart-empty">No data yet</div>'; return; }
+    if (!funnel) { el.innerHTML = '<div class="card-empty">No data yet</div>'; return; }
     const steps = [
       { label: "Searched", num: funnel.searched },
       { label: "Match Found", num: funnel.matchFound },
@@ -512,260 +459,208 @@
     ];
     el.innerHTML = `<div class="funnel">${steps.map((s, i) => {
       const pct = funnel.searched > 0 ? ((s.num / funnel.searched) * 100).toFixed(0) + "%" : "—";
-      return `
-        <div class="funnel-step">
-          <div class="num">${s.num}</div>
-          <div class="label">${s.label}</div>
-          <div class="pct">${i === 0 ? "" : pct}</div>
-        </div>
-        ${i < steps.length - 1 ? '<div class="funnel-arrow">→</div>' : ""}
-      `;
+      return `<div class="funnel-step"><div class="num">${s.num}</div><div class="flabel">${s.label}</div><div class="pct">${i === 0 ? "" : pct}</div></div>${i < steps.length - 1 ? '<div class="funnel-arrow">→</div>' : ""}`;
     }).join("")}</div>`;
   }
 
-  function sortTable(key) {
-    if (sortKey === key) {
-      sortDir *= -1;
-    } else {
-      sortKey = key;
-      sortDir = -1;
-    }
-    renderTable();
+  function renderRankList(items) {
+    const container = document.getElementById("rankList");
+    if (!items || items.length === 0) { container.innerHTML = '<div class="card-empty">No ranked leads yet</div>'; return; }
+    container.innerHTML = items.map(p => `
+      <div class="drawer-row" style="cursor:pointer;" onclick='openDrawer(${JSON.stringify(p).replace(/'/g, "&#39;")})'>
+        <span><span class="tier-badge tier-${p.vendorTier}">${p.vendorTier}</span> ${p.title.length > 30 ? p.title.slice(0,30)+"…" : p.title}</span>
+        <span>${fmtMoney(p.priceDifference)} · ${p.roiPercent ?? "—"}%</span>
+      </div>`).join("");
   }
 
-  function setFilterTier(val) {
-    filterTier = val;
+  function renderTierDonut(breakdown) {
+    const ctx = document.getElementById("tierDonutCanvas");
+    if (charts.tierDonut) charts.tierDonut.destroy();
+    if (!breakdown || breakdown.length === 0) return;
+    const colors = { S: "#059669", A: "#2563eb", B: "#b45309", C: "#9ca3af", D: "#7c3aed", Unranked: "#d1d5db" };
+    charts.tierDonut = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: breakdown.map(b => b.tier),
+        datasets: [{ data: breakdown.map(b => b.count), backgroundColor: breakdown.map(b => colors[b.tier] || "#d1d5db"), borderWidth: 2, borderColor: "#fff" }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: "62%",
+        plugins: { legend: { position: "right", labels: { boxWidth: 10, font: { size: 11 } } } }
+      }
+    });
+  }
+
+  function renderBarChart(canvasId, data, key, color, clickable, formatFn) {
+    const ctx = document.getElementById(canvasId);
+    if (charts[canvasId]) charts[canvasId].destroy();
+    if (!data || data.length === 0) return;
+    charts[canvasId] = new Chart(ctx, {
+      type: "bar",
+      data: { labels: data.map(d => d.date.slice(5)), datasets: [{ data: data.map(d => d[key]), backgroundColor: color, borderRadius: 4, maxBarThickness: 28 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => formatFn ? formatFn(c.raw) : c.raw } } },
+        scales: { y: { beginAtZero: true, grid: { color: "#f0f1f3" } }, x: { grid: { display: false } } },
+        onClick: clickable ? (evt, elements) => {
+          if (elements.length > 0) {
+            const date = data[elements[0].index].date;
+            showTab("reports", document.querySelectorAll(".tab-btn")[3]);
+            jumpToReportDate(date);
+          }
+        } : undefined,
+      }
+    });
+  }
+
+  function sortTable(key) {
+    if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = -1; }
     renderTable();
   }
+  function setFilterTier(val) { filterTier = val; renderTable(); }
 
   function renderTable() {
     const tbody = document.getElementById("tableBody");
     let list = currentProducts;
-    if (filterTier !== "all") {
-      list = list.filter(p => (p.vendorTier || "Unranked") === filterTier);
-    }
+    if (filterTier !== "all") list = list.filter(p => (p.vendorTier || "Unranked") === filterTier);
     list = [...list].sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      let cmp;
-      if (typeof av === "string" || typeof bv === "string") {
-        cmp = String(av ?? "").localeCompare(String(bv ?? ""));
-      } else {
-        cmp = (av ?? 0) - (bv ?? 0);
-      }
+      const av = a[sortKey], bv = b[sortKey];
+      let cmp = (typeof av === "string" || typeof bv === "string")
+        ? String(av ?? "").localeCompare(String(bv ?? ""))
+        : (av ?? 0) - (bv ?? 0);
       return sortDir === -1 ? -cmp : cmp;
     });
-
     document.querySelectorAll("th.sortable .arrow").forEach(a => a.textContent = "");
     const activeArrow = document.getElementById("arrow-" + sortKey);
     if (activeArrow) activeArrow.textContent = sortDir === -1 ? "▼" : "▲";
 
     if (!list || list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">No deals found yet — check back after the next run.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="card-empty">No deals found yet — check back after the next run.</td></tr>';
       return;
     }
-
     tbody.innerHTML = list.map(p => `
-      <tr>
+      <tr onclick='openDrawer(${JSON.stringify(p).replace(/'/g, "&#39;")})'>
         <td>${p.title}</td>
         <td>${fmtMoney(p.amazonPrice)}</td>
         <td>${fmtMoney(p.sourcingPrice)}</td>
         <td class="diff">${fmtMoney(p.priceDifference)}</td>
         <td><span class="tier-badge tier-${p.vendorTier || 'Unranked'}">${p.vendorTier || 'Unranked'}</span></td>
-        <td>${p.salesRank || "—"}</td>
-        <td>${p.sourceLink ? `<a class="link" href="${p.sourceLink}" target="_blank">View</a>` : "—"}</td>
         <td>${p.dateFound || "—"}</td>
-      </tr>
-    `).join("");
+      </tr>`).join("");
   }
 
-
-  function showLock(err) {
-    document.getElementById("app").style.display = "none";
-    document.getElementById("lock").style.display = "block";
-    document.getElementById("lockError").textContent = err || "";
+  function openDrawer(p) {
+    document.getElementById("drawerTitle").textContent = p.title;
+    document.getElementById("drawerBody").innerHTML = `
+      <div class="drawer-row"><span class="k">Amazon Price</span><span>${fmtMoney(p.amazonPrice)}</span></div>
+      <div class="drawer-row"><span class="k">Sourcing Price</span><span>${fmtMoney(p.sourcingPrice)}</span></div>
+      <div class="drawer-row"><span class="k">Profit</span><span class="diff">${fmtMoney(p.priceDifference)}</span></div>
+      <div class="drawer-row"><span class="k">ROI</span><span>${p.roiPercent ?? "—"}%</span></div>
+      <div class="drawer-row"><span class="k">Vendor Tier</span><span><span class="tier-badge tier-${p.vendorTier}">${p.vendorTier}</span></span></div>
+      <div class="drawer-row"><span class="k">Sales Rank</span><span>${p.salesRank || "—"}</span></div>
+      <div class="drawer-row"><span class="k">Date Found</span><span>${p.dateFound || "—"}</span></div>
+      <div class="drawer-row"><span class="k">Source</span><span>${p.sourceLink ? `<a class="link" href="${p.sourceLink}" target="_blank">Open link</a>` : "—"}</span></div>
+    `;
+    document.getElementById("drawerOverlay").classList.add("show");
   }
-
-  function unlock() {
-    adminKey = document.getElementById("adminKeyInput").value;
-    localStorage.setItem("dashboardAdminKey", adminKey);
-    loadData();
-  }
-
-  loadData();
-  setInterval(loadData, 30000); // refresh every 30s
-
-  function showToast(msg) {
-    const t = document.getElementById("toast");
-    t.textContent = msg;
-    t.classList.add("show");
-    setTimeout(() => t.classList.remove("show"), 3500);
-  }
+  function closeDrawer() { document.getElementById("drawerOverlay").classList.remove("show"); }
 
   async function triggerRun(runCount, btnEl) {
     btnEl.disabled = true;
-    const originalHTML = btnEl.innerHTML;
+    const original = btnEl.innerHTML;
     btnEl.textContent = "Starting...";
     try {
-      const res = await fetch("/.netlify/functions/trigger-run", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(adminKey ? { "x-admin-key": adminKey } : {}),
-        },
-        body: JSON.stringify({ runCount }),
-      });
-      if (res.ok) {
-        showToast(runCount === 1
-          ? "Run started — check back in a couple minutes."
-          : "Extended run started — this may take a while.");
-      } else {
-        showToast("Could not start run — check Netlify function logs.");
-      }
-    } catch (err) {
-      showToast("Error starting run: " + err.message);
-    } finally {
-      setTimeout(() => {
-        btnEl.disabled = false;
-        btnEl.innerHTML = originalHTML;
-      }, 4000);
-    }
+      const res = await apiFetch("trigger-run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ runCount }) });
+      showToast(res.ok ? (runCount === 1 ? "Run started." : "Extended run started.") : "Could not start run.");
+    } catch (err) { showToast("Error: " + err.message); }
+    finally { setTimeout(() => { btnEl.disabled = false; btnEl.innerHTML = original; }, 4000); }
   }
 
-  function renderBarChart(containerId, data, key, color, formatValue) {
-    const container = document.getElementById(containerId);
-    if (!data || data.length === 0) {
-      container.innerHTML = '<div class="chart-empty">No data yet</div>';
-      return;
-    }
-    const width = 480, height = 160, padding = 24;
-    const max = Math.max(...data.map(d => d[key]), 1);
-    const barWidth = (width - padding * 2) / data.length;
-
-    let bars = "";
-    data.forEach((d, i) => {
-      const barHeight = (d[key] / max) * (height - padding * 2);
-      const x = padding + i * barWidth;
-      const y = height - padding - barHeight;
-      bars += `
-        <rect x="${x + 4}" y="${y}" width="${barWidth - 8}" height="${barHeight}" rx="3" fill="${color}" />
-        <text class="bar-value" x="${x + barWidth / 2}" y="${y - 4}" text-anchor="middle">${formatValue(d[key])}</text>
-        <text class="bar-label" x="${x + barWidth / 2}" y="${height - padding + 14}" text-anchor="middle">${d.date.slice(5)}</text>
-      `;
-    });
-
-    container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" width="100%" height="160">${bars}</svg>`;
-  }
-  function renderRankList(items) {
-    const container = document.getElementById("rankList");
-    if (!items || items.length === 0) {
-      container.innerHTML = '<div class="chart-empty">No ranked leads yet</div>';
-      return;
-    }
-    const maxScore = Math.max(...items.map(i => i.score), 1);
-    container.innerHTML = items.map(p => `
-      <div class="rank-row">
-        <div class="rank-name" title="${p.title}">
-          <span class="tier-badge tier-${p.vendorTier}">${p.vendorTier}</span>
-          ${p.title.length > 28 ? p.title.slice(0, 28) + "…" : p.title}
-        </div>
-        <div class="rank-bar-track">
-          <div class="rank-bar-fill" style="width:${(p.score / maxScore) * 100}%"></div>
-        </div>
-        <div class="rank-value">$${p.priceDifference.toFixed(0)} · ${p.roiPercent ?? "—"}%</div>
-      </div>
-    `).join("");
+  async function stopRun(btnEl) {
+    btnEl.disabled = true;
+    try {
+      const res = await apiFetch("stop-run", { method: "POST" });
+      const data = await res.json();
+      showToast(res.ok ? `Stopped — ${data.cancelledRuns?.length || 0} run(s) cancelled, schedule paused.` : "Could not stop.");
+    } catch (err) { showToast("Error: " + err.message); }
+    finally { setTimeout(() => btnEl.disabled = false, 2000); }
   }
 
-  function openDiagnostics() {
-    document.getElementById("diagOverlay").classList.add("show");
-  }
-  function closeDiagnostics() {
-    document.getElementById("diagOverlay").classList.remove("show");
+  async function resumeRun(btnEl) {
+    btnEl.disabled = true;
+    try {
+      const res = await apiFetch("resume-run", { method: "POST" });
+      showToast(res.ok ? "Resumed — schedule re-enabled." : "Could not resume.");
+    } catch (err) { showToast("Error: " + err.message); }
+    finally { setTimeout(() => btnEl.disabled = false, 2000); }
   }
 
-  let dailyReportsCache = null;
-
-  async function openDailyReports() {
-    document.getElementById("dailyReportsOverlay").classList.add("show");
+  async function loadDailyReports() {
     const bodyEl = document.getElementById("dailyReportsBody");
     bodyEl.innerHTML = "Loading...";
     try {
-      const res = await fetch("/.netlify/functions/get-daily-reports", {
-        headers: adminKey ? { "x-admin-key": adminKey } : {},
-      });
+      const res = await apiFetch("get-daily-reports");
       const data = await res.json();
       dailyReportsCache = data.days || [];
       renderDayList();
-    } catch (err) {
-      bodyEl.innerHTML = `<div class="chart-empty">Could not load: ${err.message}</div>`;
-    }
-  }
-
-  function closeDailyReports() {
-    document.getElementById("dailyReportsOverlay").classList.remove("show");
+    } catch (err) { bodyEl.innerHTML = `<div class="card-empty">Could not load: ${err.message}</div>`; }
   }
 
   function renderDayList() {
     const bodyEl = document.getElementById("dailyReportsBody");
-    document.getElementById("dailyReportsSub").textContent = "Top 10 leads snapshotted at the end of each day.";
+    document.getElementById("dailyReportsSub").textContent = "Daily Reports";
     if (!dailyReportsCache || dailyReportsCache.length === 0) {
-      bodyEl.innerHTML = '<div class="chart-empty">No daily reports yet</div>';
+      bodyEl.innerHTML = '<div class="card-empty">No daily reports yet — run the tool at least once.</div>';
       return;
     }
     bodyEl.innerHTML = dailyReportsCache.map((d, i) => `
       <div class="day-list-item" onclick="renderDayDetail(${i})">
-        <span>${d.date}</span>
-        <span class="count">${d.leadCount} lead(s) →</span>
-      </div>
-    `).join("");
+        <span>${d.date}</span><span class="count">${d.leadCount} lead(s) →</span>
+      </div>`).join("");
   }
 
   function renderDayDetail(index) {
     const day = dailyReportsCache[index];
-    const bodyEl = document.getElementById("dailyReportsBody");
     document.getElementById("dailyReportsSub").textContent = day.date;
-    bodyEl.innerHTML = `
-      <div class="back-link" onclick="renderDayList()">&larr; All days</div>
-      ${day.leads.map(l => `
-        <div class="day-detail-row">
-          <span>#${l.rank} ${l.title.length > 30 ? l.title.slice(0,30)+"…" : l.title}</span>
-          <span>${fmtMoney(l.profit)} · ${l.roi ?? "—"}% · ${l.vendorTier}</span>
-        </div>
-      `).join("")}
-    `;
+    const bodyEl = document.getElementById("dailyReportsBody");
+    const qualifying = day.leads.filter(l => l.rank > 0);
+    bodyEl.innerHTML = `<div class="back-link" onclick="renderDayList()">&larr; All days</div>` +
+      (qualifying.length === 0
+        ? '<div class="card-empty">No qualifying leads that day.</div>'
+        : qualifying.map(l => `
+          <div class="drawer-row">
+            <span>#${l.rank} ${l.title.length > 32 ? l.title.slice(0,32)+"…" : l.title}</span>
+            <span>${fmtMoney(l.profit)} · ${l.roi ?? "—"}% · <span class="tier-badge tier-${l.vendorTier}">${l.vendorTier}</span></span>
+          </div>`).join(""));
+  }
+
+  function jumpToReportDate(date) {
+    if (!dailyReportsCache) { loadDailyReports().then(() => jumpByDate(date)); return; }
+    jumpByDate(date);
+  }
+  function jumpByDate(date) {
+    const idx = dailyReportsCache.findIndex(d => d.date === date);
+    if (idx >= 0) renderDayDetail(idx); else renderDayList();
   }
 
   async function runDiagnostics(btnEl) {
-    btnEl.disabled = true;
-    btnEl.textContent = "Running...";
+    btnEl.disabled = true; btnEl.textContent = "Running...";
     const resultsEl = document.getElementById("diagResults");
     resultsEl.innerHTML = "";
     try {
-      const res = await fetch("/.netlify/functions/health-check", {
-        headers: adminKey ? { "x-admin-key": adminKey } : {},
-      });
+      const res = await apiFetch("health-check");
       const data = await res.json();
       resultsEl.innerHTML = data.checks.map(c => {
         const cls = c.ok ? "pass" : (c.warningOnly ? "warn" : "fail");
-        return `
-          <div class="diag-check">
-            <div class="diag-icon ${cls}"></div>
-            <div>
-              <div class="name">${c.name}</div>
-              <div class="detail">${c.detail}</div>
-            </div>
-          </div>
-        `;
+        return `<div class="diag-check"><div class="diag-icon ${cls}"></div><div><div class="name">${c.name}</div><div class="detail">${c.detail}</div></div></div>`;
       }).join("");
     } catch (err) {
       resultsEl.innerHTML = `<div class="diag-check"><div class="diag-icon fail"></div><div><div class="name">Could not run diagnostics</div><div class="detail">${err.message}</div></div></div>`;
-    } finally {
-      btnEl.disabled = false;
-      btnEl.textContent = "Run Health Check";
-    }
+    } finally { btnEl.disabled = false; btnEl.textContent = "Run Health Check"; }
   }
-</script>
 
+  loadData();
+  setInterval(loadData, 30000);
+</script>
 </body>
 </html>
