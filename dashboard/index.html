@@ -873,6 +873,8 @@
           <div class="stat-row"><span>Sales Rank</span><span>${p.salesRank ?? "—"}</span></div>
           <div class="stat-row"><span>Sellers</span><span>${p.totalOfferCount ?? "—"}</span></div>
           <div class="stat-row"><span>Monthly Sold</span><span>${p.monthlySold ?? "—"}</span></div>
+          <div class="stat-row"><span>BB % Amazon</span><span>${p.buyBoxPctAmazon90 ?? "—"}${p.buyBoxPctAmazon90 != null ? "%" : ""}</span></div>
+          <div class="stat-row"><span>BB % Top Seller</span><span>${p.buyBoxPctTopSeller90 ?? "—"}${p.buyBoxPctTopSeller90 != null ? "%" : ""}</span></div>
           <div class="stat-row"><span>Weight</span><span>${p.packageWeightLbs != null ? p.packageWeightLbs + " lb" : "—"}</span></div>
         </div>
       </div>`).join("");
