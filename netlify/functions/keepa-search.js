@@ -108,6 +108,8 @@ export async function handler(event) {
       totalOfferCount: p.totalOfferCount ?? null,
       monthlySold: p.monthlySold ?? null,
       packageWeightLbs: p.packageWeight ? +(p.packageWeight / 453.59237).toFixed(2) : null,
+      buyBoxPctAmazon90: p.stats?.buyBoxStatsAmazon90 ?? null,
+      buyBoxPctTopSeller90: p.stats?.buyBoxStatsTopSeller90 ?? null,
       brand: p.brand || "",
     }));
 
