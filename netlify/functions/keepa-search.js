@@ -34,8 +34,11 @@ export async function handler(event) {
   const selection = { perPage, page: 0 };
   if (filters.salesRankMin != null) selection.current_SALES_gte = filters.salesRankMin;
   if (filters.salesRankMax != null) selection.current_SALES_lte = filters.salesRankMax;
+  if (filters.buyBoxMin != null) selection.current_BUY_BOX_SHIPPING_gte = Math.round(filters.buyBoxMin * 100);
+  if (filters.buyBoxMax != null) selection.current_BUY_BOX_SHIPPING_lte = Math.round(filters.buyBoxMax * 100);
   if (filters.sellersMin != null) selection.totalOfferCount_gte = filters.sellersMin;
   if (filters.sellersMax != null) selection.totalOfferCount_lte = filters.sellersMax;
+  if (filters.amazonBuyBoxPctMax != null) selection.buyBoxStatsAmazon90_lte = filters.amazonBuyBoxPctMax;
   if (filters.topSellerBuyBoxMax != null) selection.buyBoxStatsTopSeller90_lte = filters.topSellerBuyBoxMax;
   if (filters.minMonthlySold != null) selection.monthlySold_gte = filters.minMonthlySold;
   if (filters.maxWeightLbs != null) {
@@ -43,16 +46,18 @@ export async function handler(event) {
     selection.packageWeight_lte = Math.round(filters.maxWeightLbs * 453.59237);
   }
   if (filters.maxOutOfStockPct != null) selection.outOfStockPercentage90_lte = filters.maxOutOfStockPct;
+  if (filters.rootCategory != null) selection.rootCategory = filters.rootCategory;
 
   try {
     // Step 1: Product Finder - get matching ASINs.
+    // IMPORTANT: "selection" goes in the URL as a query parameter (JSON,
+    // URL-encoded), same as domain and key - not as the POST body. This
+    // was wrong in the first version and is the most likely cause of the
+    // first "search failed" error.
+    const selectionParam = encodeURIComponent(JSON.stringify(selection));
     const findRes = await fetch(
-      `https://api.keepa.com/query?domain=${DOMAIN_US}&key=${KEEPA_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(selection),
-      }
+      `https://api.keepa.com/query?key=${KEEPA_API_KEY}&domain=${DOMAIN_US}&selection=${selectionParam}`,
+      { method: "POST" }
     );
     const findData = await findRes.json();
     if (!findRes.ok || !findData.asinList) {
