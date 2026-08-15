@@ -55,6 +55,13 @@ export async function handler(event) {
     selection.packageWeight_lte = Math.round(filters.maxWeightLbs * 453.59237);
   }
   if (filters.maxOutOfStockPct != null) selection.outOfStockPercentage90_lte = filters.maxOutOfStockPct;
+  // Trend/seasonality signal: a low 30-day average rank combined with a
+  // higher 365-day average means the product is ranking meaningfully
+  // better right now than its yearly average - a sign of a current
+  // upswing (seasonal or otherwise). Same avg{N}_TYPE naming pattern as
+  // the already-confirmed current_SALES field.
+  if (filters.avg30RankMax != null) selection.avg30_SALES_lte = filters.avg30RankMax;
+  if (filters.avg365RankMin != null) selection.avg365_SALES_gte = filters.avg365RankMin;
   if (filters.rootCategory != null) selection.rootCategory = filters.rootCategory;
 
   try {
@@ -70,6 +77,18 @@ export async function handler(event) {
     );
     const findData = await findRes.json();
     if (!findRes.ok || !findData.asinList) {
+      // A negative/very low tokensLeft with no explicit error message
+      // usually means Keepa rejected the request for being rate-limited,
+      // not a real bug - surface that plainly instead of a raw JSON dump.
+      if (findData.tokensLeft != null && findData.tokensLeft < 5) {
+        const waitMins = Math.ceil((findData.refillIn || 0) / 60000) || Math.ceil((5 - findData.tokensLeft) / (findData.refillRate || 1));
+        return {
+          statusCode: 429,
+          body: JSON.stringify({
+            error: `Keepa token balance too low (${findData.tokensLeft} left) - wait about ${waitMins} minute(s) and try again.`,
+          }),
+        };
+      }
       return {
         statusCode: 502,
         body: JSON.stringify({ error: "Keepa search failed", detail: findData }),
