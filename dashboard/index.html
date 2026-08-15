@@ -342,6 +342,7 @@
     <div class="card" style="margin-bottom:14px;">
       <h3>Search Keepa Directly</h3>
       <p style="font-size:12.5px;color:var(--muted);margin-top:-6px;">Set your filters, search, then check the ones worth sourcing and add them to your list.</p>
+      <p style="font-size:12px;color:var(--muted);margin-top:-6px;">Tip for seasonal/trending products: set <b>30-Day Avg Rank Max</b> low and <b>365-Day Avg Rank Min</b> higher — that finds products ranking much better right now than their yearly average, a sign of a current upswing.</p>
       <div class="discover-filters">
         <div class="filter-field"><label>Sales Rank Min</label><input type="number" id="dfSalesRankMin" placeholder="e.g. 0" /></div>
         <div class="filter-field"><label>Sales Rank Max</label><input type="number" id="dfSalesRankMax" placeholder="e.g. 100000" /></div>
@@ -355,6 +356,8 @@
         <div class="filter-field"><label>Max Weight (lbs)</label><input type="number" id="dfMaxWeight" placeholder="e.g. 3" /></div>
         <div class="filter-field"><label>Max Out-of-Stock %</label><input type="number" id="dfMaxOOS" placeholder="e.g. 20" /></div>
         <div class="filter-field"><label>Root Category</label><select id="dfRootCategory"><option value="">Loading...</option></select></div>
+        <div class="filter-field"><label>30-Day Avg Rank Max</label><input type="number" id="dfAvg30RankMax" placeholder="e.g. 50000" /></div>
+        <div class="filter-field"><label>365-Day Avg Rank Min</label><input type="number" id="dfAvg365RankMin" placeholder="e.g. 80000" /></div>
         <div class="filter-field"><label># Results</label><input type="number" id="dfPerPage" value="30" max="100" /></div>
       </div>
       <div style="margin-top:14px;display:flex;align-items:center;gap:12px;">
@@ -702,7 +705,10 @@
       </tr>`).join("");
   }
 
+  let currentDrawerLead = null;
+
   function openDrawer(p) {
+    currentDrawerLead = p;
     document.getElementById("drawerTitle").textContent = p.title;
     document.getElementById("drawerBody").innerHTML = `
       ${p.asin ? `<div class="img-box" style="border-radius:8px;margin-bottom:14px;"><img src="${amazonImageUrl(p.asin)}" alt="" onerror="this.parentElement.style.display='none'" /></div>` : ""}
@@ -715,10 +721,36 @@
       <div class="drawer-row"><span class="k">Sales Rank</span><span>${p.salesRank || "—"}</span></div>
       <div class="drawer-row"><span class="k">Date Found</span><span>${p.dateFound || "—"}</span></div>
       <div class="drawer-row"><span class="k">Source</span><span>${p.sourceLink ? `<a class="link" href="${p.sourceLink}" target="_blank">Open link</a>` : "—"}</span></div>
+      <button class="btn primary" style="width:100%;margin-top:16px;" onclick="sendToPurchasingDashboard(this)">Send to Purchasing Dashboard</button>
     `;
     document.getElementById("drawerOverlay").classList.add("show");
   }
   function closeDrawer() { document.getElementById("drawerOverlay").classList.remove("show"); }
+
+  async function sendToPurchasingDashboard(btnEl) {
+    if (!currentDrawerLead) return;
+    btnEl.disabled = true;
+    const original = btnEl.textContent;
+    btnEl.textContent = "Sending...";
+    try {
+      const res = await apiFetch("send-to-purchasing-dashboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentDrawerLead),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Sent — est. profit ${fmtMoney(data.profit)}, ROI ${data.roi}%`);
+      } else {
+        showToast("Could not send: " + (data.error || res.status));
+      }
+    } catch (err) {
+      showToast("Error: " + err.message);
+    } finally {
+      btnEl.disabled = false;
+      btnEl.textContent = original;
+    }
+  }
 
   async function triggerRun(runCount, btnEl) {
     btnEl.disabled = true;
@@ -822,6 +854,8 @@
       minMonthlySold: numOrNull("dfMinMonthlySold"),
       maxWeightLbs: numOrNull("dfMaxWeight"),
       maxOutOfStockPct: numOrNull("dfMaxOOS"),
+      avg30RankMax: numOrNull("dfAvg30RankMax"),
+      avg365RankMin: numOrNull("dfAvg365RankMin"),
       rootCategory: numOrNull("dfRootCategory"),
       perPage: numOrNull("dfPerPage") || 30,
     };
