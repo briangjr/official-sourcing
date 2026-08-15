@@ -869,7 +869,7 @@
         </div>
         <div class="body">
           <div class="title">${(p.title || "").length > 60 ? p.title.slice(0,60)+"…" : p.title}</div>
-          <div class="stat-row"><span>Buy Box</span><span>${fmtMoney(p.buyBoxPrice)}</span></div>
+          <div class="stat-row"><span>Buy Box</span><span>${p.buyBoxPrice != null ? fmtMoney(p.buyBoxPrice) : '<span style="color:var(--bad)">No price data</span>'}</span></div>
           <div class="stat-row"><span>Sales Rank</span><span>${p.salesRank ?? "—"}</span></div>
           <div class="stat-row"><span>Sellers</span><span>${p.totalOfferCount ?? "—"}</span></div>
           <div class="stat-row"><span>Monthly Sold</span><span>${p.monthlySold ?? "—"}</span></div>
