@@ -33,8 +33,8 @@ const {
   BATCH_SIZE = "10",
   DAILY_CAP = "100",
   RUN_COUNT = "1",
-  CLAUDE_MODEL = "claude-haiku-4-5-20251001",
-  MAX_SEARCHES_PER_PRODUCT = "3",
+  CLAUDE_MODEL = "claude-sonnet-5",
+  MAX_SEARCHES_PER_PRODUCT = "4",
   SHIP_ZIP = "",
   MIN_AMAZON_PRICE = "15",
 } = process.env;
@@ -169,9 +169,11 @@ async function findCheaperPrice(anthropic, row, trustedDomains = []) {
 
   const trustedSiteInstruction =
     trustedDomains.length > 0
-      ? `\nSTEP 1 (do this first): search ONLY these sites, one at a time, using
-"site:DOMAIN <exact product title>": ${trustedDomains.join(", ")}.
-STEP 2: only if step 1 finds nothing, do one general web search instead.
+      ? `\nSTEP 1 (do this first, but spend AT MOST ONE search on it - a single combined
+query like "site:${trustedDomains[0]} OR site:${trustedDomains[1] || trustedDomains[0]} ... <product title>",
+not one search per domain): try your trusted sites first: ${trustedDomains.join(", ")}.
+STEP 2: if step 1 finds nothing, use your remaining searches on open web search instead -
+don't burn your whole search budget on step 1 alone.
 A match from step 1 is more trustworthy - always prefer it over a step 2 result.\n`
       : "";
 
