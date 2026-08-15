@@ -122,6 +122,43 @@
   .tier-D { background: #f5f3ff; color: #7c3aed; }
   .tier-Unranked { background: #f3f4f6; color: #9ca3af; }
 
+  .conf-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; }
+  .conf-high { background: #ecfdf5; color: #059669; }
+  .conf-medium { background: #fffbeb; color: #b45309; }
+  .conf-low { background: #f3f4f6; color: #6b7280; }
+
+  .lead-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+  .lead-card {
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden; cursor: pointer;
+    background: var(--panel); transition: box-shadow 0.15s, transform 0.15s;
+  }
+  .lead-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08); transform: translateY(-2px); }
+  .lead-card .img-box {
+    width: 100%; aspect-ratio: 1 / 1; background: #f6f7f9; display: flex;
+    align-items: center; justify-content: center; overflow: hidden;
+  }
+  .lead-card .img-box img { width: 100%; height: 100%; object-fit: contain; }
+  .lead-card .img-box .no-img { font-size: 11px; color: var(--muted); text-align: center; padding: 8px; }
+  .lead-card .body { padding: 10px 12px 12px; }
+  .lead-card .title { font-size: 12px; font-weight: 600; line-height: 1.3; margin-bottom: 8px; height: 31px; overflow: hidden; }
+  .lead-card .price-row { display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; margin-bottom: 6px; }
+  .lead-card .price-row .from { color: var(--muted); text-decoration: line-through; }
+  .lead-card .price-row .to { color: var(--good); font-weight: 700; }
+  .lead-card .stat-row { display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 6px; }
+  .lead-card .roi { font-weight: 700; color: var(--accent); }
+  .lead-card .badges { display: flex; gap: 5px; flex-wrap: wrap; }
+  .lead-card .card-link { display: block; margin-top: 8px; font-size: 11px; color: var(--accent); text-decoration: none; }
+  .lead-card .card-link:hover { text-decoration: underline; }
+
+  .discover-filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+  .filter-field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .filter-field input {
+    width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-size: 13px;
+  }
+  .lead-card .select-box { position: relative; }
+  .lead-card .select-box input { position: absolute; top: 8px; left: 8px; width: 18px; height: 18px; z-index: 2; }
+
   .table-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
   .table-controls select {
     background: var(--panel); color: var(--text); border: 1px solid var(--border);
@@ -213,6 +250,7 @@
     <button class="tab-btn active" onclick="showTab('overview', this)">Overview</button>
     <button class="tab-btn" onclick="showTab('activity', this)">Activity</button>
     <button class="tab-btn" onclick="showTab('leads', this)">Leads</button>
+    <button class="tab-btn" onclick="showTab('discover', this)">Discover</button>
     <button class="tab-btn" onclick="showTab('reports', this)">Daily Reports</button>
     <button class="tab-btn" onclick="showTab('diagnostics', this)">Diagnostics</button>
   </div>
@@ -242,15 +280,14 @@
       <div id="funnelView"></div>
     </div>
 
-    <div class="grid-2">
-      <div class="card">
-        <h3>Top Leads — Ranked by Score</h3>
-        <div id="rankList"></div>
-      </div>
-      <div class="card">
-        <h3>Leads by Vendor Tier</h3>
-        <div class="donut-box"><canvas id="tierDonutCanvas"></canvas></div>
-      </div>
+    <div class="card" style="margin-bottom:14px;">
+      <h3>Top Leads — Ranked by Score</h3>
+      <div class="lead-cards" id="rankList"></div>
+    </div>
+
+    <div class="card">
+      <h3>Leads by Vendor Tier</h3>
+      <div class="donut-box"><canvas id="tierDonutCanvas"></canvas></div>
     </div>
   </div>
 
@@ -297,6 +334,37 @@
         </thead>
         <tbody id="tableBody"></tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- DISCOVER -->
+  <div class="tab-panel" id="tab-discover">
+    <div class="card" style="margin-bottom:14px;">
+      <h3>Search Keepa Directly</h3>
+      <p style="font-size:12.5px;color:var(--muted);margin-top:-6px;">Set your filters, search, then check the ones worth sourcing and add them to your list.</p>
+      <div class="discover-filters">
+        <div class="filter-field"><label>Sales Rank Min</label><input type="number" id="dfSalesRankMin" placeholder="e.g. 0" /></div>
+        <div class="filter-field"><label>Sales Rank Max</label><input type="number" id="dfSalesRankMax" placeholder="e.g. 100000" /></div>
+        <div class="filter-field"><label>Active Sellers Min</label><input type="number" id="dfSellersMin" value="5" /></div>
+        <div class="filter-field"><label>Active Sellers Max</label><input type="number" id="dfSellersMax" value="55" /></div>
+        <div class="filter-field"><label>Top Seller Buy Box Max %</label><input type="number" id="dfTopSellerMax" value="25" /></div>
+        <div class="filter-field"><label>Min Monthly Sold</label><input type="number" id="dfMinMonthlySold" placeholder="e.g. 50" /></div>
+        <div class="filter-field"><label>Max Weight (lbs)</label><input type="number" id="dfMaxWeight" placeholder="e.g. 3" /></div>
+        <div class="filter-field"><label>Max Out-of-Stock %</label><input type="number" id="dfMaxOOS" placeholder="e.g. 20" /></div>
+        <div class="filter-field"><label># Results</label><input type="number" id="dfPerPage" value="30" max="100" /></div>
+      </div>
+      <div style="margin-top:14px;display:flex;align-items:center;gap:12px;">
+        <button class="btn primary" onclick="runKeepaSearch(this)">Search Keepa</button>
+        <span id="discoverMeta" style="font-size:12px;color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <div class="card" id="discoverResultsCard" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0;">Results <span id="discoverCount" style="font-weight:400;text-transform:none;color:var(--muted);"></span></h3>
+        <button class="btn primary" onclick="addSelectedToSheet(this)">Add Selected to Sourcing List</button>
+      </div>
+      <div class="lead-cards" id="discoverResults"></div>
     </div>
   </div>
 
@@ -496,13 +564,41 @@
     }).join("")}</div>`;
   }
 
+  function amazonImageUrl(asin) {
+    // Best-effort: Amazon's public image CDN pattern from ASIN. Works for
+    // most standard listings, not guaranteed for every one - the onerror
+    // fallback below handles misses cleanly rather than showing a broken
+    // image icon.
+    return `https://images-na.ssl-images-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`;
+  }
+
   function renderRankList(items) {
     const container = document.getElementById("rankList");
     if (!items || items.length === 0) { container.innerHTML = '<div class="card-empty">No ranked leads yet</div>'; return; }
     container.innerHTML = items.map(p => `
-      <div class="drawer-row" style="cursor:pointer;" onclick='openDrawer(${JSON.stringify(p).replace(/'/g, "&#39;")})'>
-        <span><span class="tier-badge tier-${p.vendorTier}">${p.vendorTier}</span> ${p.title.length > 30 ? p.title.slice(0,30)+"…" : p.title}</span>
-        <span>${fmtMoney(p.priceDifference)} · ${p.roiPercent ?? "—"}%</span>
+      <div class="lead-card" onclick='openDrawer(${JSON.stringify(p).replace(/'/g, "&#39;")})'>
+        <div class="img-box">
+          ${p.asin
+            ? `<img src="${amazonImageUrl(p.asin)}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;no-img&quot;>No image</div>'" />`
+            : '<div class="no-img">No image</div>'}
+        </div>
+        <div class="body">
+          <div class="title">${p.title.length > 60 ? p.title.slice(0,60)+"…" : p.title}</div>
+          <div class="price-row">
+            <span class="from">${fmtMoney(p.amazonPrice)}</span>
+            <span>→</span>
+            <span class="to">${fmtMoney(p.sourcingPrice)}</span>
+          </div>
+          <div class="stat-row">
+            <span class="roi">${p.roiPercent ?? "—"}% ROI</span>
+            <span>${fmtMoney(p.priceDifference)}</span>
+          </div>
+          <div class="badges">
+            <span class="tier-badge tier-${p.vendorTier}">${p.vendorTier}</span>
+            <span class="conf-badge conf-${p.confidence || 'low'}">${(p.confidence || 'low')}</span>
+          </div>
+          ${p.sourceLink ? `<a class="card-link" href="${p.sourceLink}" target="_blank" onclick="event.stopPropagation()">View source →</a>` : ""}
+        </div>
       </div>`).join("");
   }
 
@@ -585,11 +681,13 @@
   function openDrawer(p) {
     document.getElementById("drawerTitle").textContent = p.title;
     document.getElementById("drawerBody").innerHTML = `
+      ${p.asin ? `<div class="img-box" style="border-radius:8px;margin-bottom:14px;"><img src="${amazonImageUrl(p.asin)}" alt="" onerror="this.parentElement.style.display='none'" /></div>` : ""}
       <div class="drawer-row"><span class="k">Amazon Price</span><span>${fmtMoney(p.amazonPrice)}</span></div>
       <div class="drawer-row"><span class="k">Sourcing Price</span><span>${fmtMoney(p.sourcingPrice)}</span></div>
       <div class="drawer-row"><span class="k">Profit</span><span class="diff">${fmtMoney(p.priceDifference)}</span></div>
       <div class="drawer-row"><span class="k">ROI</span><span>${p.roiPercent ?? "—"}%</span></div>
       <div class="drawer-row"><span class="k">Vendor Tier</span><span><span class="tier-badge tier-${p.vendorTier}">${p.vendorTier}</span></span></div>
+      <div class="drawer-row"><span class="k">Confidence</span><span><span class="conf-badge conf-${p.confidence || 'low'}">${p.confidence || '—'}</span></span></div>
       <div class="drawer-row"><span class="k">Sales Rank</span><span>${p.salesRank || "—"}</span></div>
       <div class="drawer-row"><span class="k">Date Found</span><span>${p.dateFound || "—"}</span></div>
       <div class="drawer-row"><span class="k">Source</span><span>${p.sourceLink ? `<a class="link" href="${p.sourceLink}" target="_blank">Open link</a>` : "—"}</span></div>
@@ -674,6 +772,106 @@
   function jumpByDate(date) {
     const idx = dailyReportsCache.findIndex(d => d.date === date);
     if (idx >= 0) renderDayDetail(idx); else renderDayList();
+  }
+
+  let discoverResultsCache = [];
+
+  async function runKeepaSearch(btnEl) {
+    btnEl.disabled = true;
+    const original = btnEl.textContent;
+    btnEl.textContent = "Searching...";
+    document.getElementById("discoverMeta").textContent = "";
+
+    const numOrNull = (id) => {
+      const v = document.getElementById(id).value;
+      return v === "" ? null : Number(v);
+    };
+    const filters = {
+      salesRankMin: numOrNull("dfSalesRankMin"),
+      salesRankMax: numOrNull("dfSalesRankMax"),
+      sellersMin: numOrNull("dfSellersMin"),
+      sellersMax: numOrNull("dfSellersMax"),
+      topSellerBuyBoxMax: numOrNull("dfTopSellerMax"),
+      minMonthlySold: numOrNull("dfMinMonthlySold"),
+      maxWeightLbs: numOrNull("dfMaxWeight"),
+      maxOutOfStockPct: numOrNull("dfMaxOOS"),
+      perPage: numOrNull("dfPerPage") || 30,
+    };
+
+    try {
+      const res = await apiFetch("keepa-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(filters),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast("Keepa search failed: " + (data.error || res.status));
+        return;
+      }
+      discoverResultsCache = data.results || [];
+      document.getElementById("discoverMeta").textContent =
+        `${data.totalResults ?? 0} total matches on Keepa · ${data.tokensLeft ?? "?"} Keepa tokens left`;
+      renderDiscoverResults();
+    } catch (err) {
+      showToast("Error: " + err.message);
+    } finally {
+      btnEl.disabled = false;
+      btnEl.textContent = original;
+    }
+  }
+
+  function renderDiscoverResults() {
+    const card = document.getElementById("discoverResultsCard");
+    const container = document.getElementById("discoverResults");
+    document.getElementById("discoverCount").textContent = `(${discoverResultsCache.length} shown)`;
+    if (discoverResultsCache.length === 0) {
+      card.style.display = "block";
+      container.innerHTML = '<div class="card-empty">No matches - try loosening your filters.</div>';
+      return;
+    }
+    card.style.display = "block";
+    container.innerHTML = discoverResultsCache.map((p, i) => `
+      <div class="lead-card select-box" style="cursor:default;">
+        <input type="checkbox" data-idx="${i}" onclick="event.stopPropagation()" />
+        <div class="img-box">
+          <img src="${amazonImageUrl(p.asin)}" alt="" onerror="this.parentElement.innerHTML='<div class=&quot;no-img&quot;>No image</div>'" />
+        </div>
+        <div class="body">
+          <div class="title">${(p.title || "").length > 60 ? p.title.slice(0,60)+"…" : p.title}</div>
+          <div class="stat-row"><span>Buy Box</span><span>${fmtMoney(p.buyBoxPrice)}</span></div>
+          <div class="stat-row"><span>Sales Rank</span><span>${p.salesRank ?? "—"}</span></div>
+          <div class="stat-row"><span>Sellers</span><span>${p.totalOfferCount ?? "—"}</span></div>
+          <div class="stat-row"><span>Monthly Sold</span><span>${p.monthlySold ?? "—"}</span></div>
+          <div class="stat-row"><span>Weight</span><span>${p.packageWeightLbs != null ? p.packageWeightLbs + " lb" : "—"}</span></div>
+        </div>
+      </div>`).join("");
+  }
+
+  async function addSelectedToSheet(btnEl) {
+    const checked = Array.from(document.querySelectorAll('#discoverResults input[type=checkbox]:checked'))
+      .map(el => discoverResultsCache[parseInt(el.dataset.idx, 10)]);
+    if (checked.length === 0) {
+      showToast("Check at least one product first.");
+      return;
+    }
+    btnEl.disabled = true;
+    const original = btnEl.textContent;
+    btnEl.textContent = "Adding...";
+    try {
+      const res = await apiFetch("add-to-sheet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ products: checked }),
+      });
+      const data = await res.json();
+      showToast(res.ok ? `Added ${data.added} product(s) to your sourcing list.` : "Could not add: " + (data.error || res.status));
+    } catch (err) {
+      showToast("Error: " + err.message);
+    } finally {
+      btnEl.disabled = false;
+      btnEl.textContent = original;
+    }
   }
 
   async function runDiagnostics(btnEl) {
