@@ -39,23 +39,47 @@ export async function handler(event) {
     const doc = new GoogleSpreadsheet(SHEET_ID, jwt);
     await doc.loadInfo();
     const sheet = doc.sheetsByTitle["Sheet1"];
-    const sheetRows = await sheet.getRows();
+    if (!sheet) {
+      throw new Error('No tab named "Sheet1" found - check the tab name matches exactly.');
+    }
+
+    let sheetRows = [];
+    try {
+      sheetRows = await sheet.getRows();
+    } catch (err) {
+      // This one IS a real failure - Sheet1 is the core data source, so
+      // surface a clear, specific error rather than a generic 500.
+      throw new Error("Sheet1 error: " + err.message + " (check row 1 has all column headers filled in)");
+    }
 
     // Merge in the Archive tab too, so the dashboard's history survives
     // even if Sheet1 gets cleared out - Archive only ever holds
     // qualifying/medium-confidence rows (low-confidence detail is
     // discarded entirely, kept only as a lean ASIN in SeenASINs, which
     // isn't read here since it has nothing worth showing).
+    // If Archive has a problem (e.g. a broken header row), skip it rather
+    // than take down the whole dashboard over a secondary tab.
     const archiveTab = doc.sheetsByTitle["Archive"];
-    const archiveRows = archiveTab ? await archiveTab.getRows() : [];
+    let archiveRows = [];
+    if (archiveTab) {
+      try {
+        archiveRows = await archiveTab.getRows();
+      } catch (err) {
+        console.error("Archive tab error (skipping, showing Sheet1 data only):", err.message);
+      }
+    }
     const rows = [...sheetRows, ...archiveRows];
 
     let lastRun = null;
     const metaTab = doc.sheetsByTitle["Meta"];
     if (metaTab) {
-      const metaRows = await metaTab.getRows();
-      const lastRunRow = metaRows.find((r) => r.get("Key") === "LastRun");
-      if (lastRunRow) lastRun = lastRunRow.get("Value");
+      try {
+        const metaRows = await metaTab.getRows();
+        const lastRunRow = metaRows.find((r) => r.get("Key") === "LastRun");
+        if (lastRunRow) lastRun = lastRunRow.get("Value");
+      } catch (err) {
+        console.error("Meta tab error (skipping, last-run time won't show):", err.message);
+      }
     }
 
     const products = rows
@@ -86,11 +110,13 @@ export async function handler(event) {
 
         return {
           title: r.get("Title") || "",
+          asin: r.get("ASIN") || "",
           amazonPrice,
           sourcingPrice,
           priceDifference: diff,
           roiPercent,
           vendorTier: vendorTier || "Unranked",
+          confidence: (r.get("Confidence") || "low").toLowerCase(),
           score,
           salesRank: r.get("Sales Rank: Current") || "",
           vendor: r.get("Deal Type") || "",
