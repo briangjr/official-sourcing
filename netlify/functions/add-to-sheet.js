@@ -57,7 +57,7 @@ export async function handler(event) {
     for (const p of products) {
       const salesRank = p.salesRank || 0;
       const monthlySold = p.monthlySold || 0;
-      const topSellerPct = 0; // not available from the finder result set itself
+      const topSellerPct = p.buyBoxPctTopSeller90 || 0; // now the real value, not hardcoded 0
       const priority = +(
         100000 / Math.max(1, salesRank) +
         monthlySold * 2 -
@@ -71,6 +71,8 @@ export async function handler(event) {
         "Monthly Sales Trends: Bought in past month": monthlySold || "",
         "Buy Box: Current": p.buyBoxPrice || "",
         "Total Offer Count": p.totalOfferCount || "",
+        "Buy Box: % Amazon 90 days": p.buyBoxPctAmazon90 ?? "",
+        "Buy Box: % Top Seller 90 days": p.buyBoxPctTopSeller90 ?? "",
         Priority: priority,
         // Status intentionally left blank - that's the "Pending" signal
         // the sourcing script looks for.
