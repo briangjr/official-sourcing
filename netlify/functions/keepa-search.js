@@ -26,12 +26,16 @@ export async function handler(event) {
     return { statusCode: 400, body: JSON.stringify({ error: "Invalid request body" }) };
   }
 
-  const perPage = Math.min(Math.max(parseInt(filters.perPage, 10) || 30, 1), 100);
+  // Keepa's minimum for perPage appears to be higher than the dashboard's
+  // 30-result default in some configurations - clamp to a safer floor.
+  // "page" is left out entirely rather than sent as 0 - Keepa's own error
+  // pointed at that combination specifically.
+  const perPage = Math.min(Math.max(parseInt(filters.perPage, 10) || 30, 10), 100);
 
   // Map the dashboard's filter fields to Keepa's actual Product Finder
   // field names. Only include a filter if the person actually set a value -
   // an unset field should not restrict the search.
-  const selection = { perPage, page: 0 };
+  const selection = { perPage };
   if (filters.salesRankMin != null) selection.current_SALES_gte = filters.salesRankMin;
   if (filters.salesRankMax != null) selection.current_SALES_lte = filters.salesRankMax;
   if (filters.buyBoxMin != null) selection.current_BUY_BOX_SHIPPING_gte = Math.round(filters.buyBoxMin * 100);
