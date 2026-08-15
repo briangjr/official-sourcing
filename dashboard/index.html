@@ -345,12 +345,16 @@
       <div class="discover-filters">
         <div class="filter-field"><label>Sales Rank Min</label><input type="number" id="dfSalesRankMin" placeholder="e.g. 0" /></div>
         <div class="filter-field"><label>Sales Rank Max</label><input type="number" id="dfSalesRankMax" placeholder="e.g. 100000" /></div>
+        <div class="filter-field"><label>Buy Box $ Min</label><input type="number" id="dfBuyBoxMin" placeholder="e.g. 15" /></div>
+        <div class="filter-field"><label>Buy Box $ Max</label><input type="number" id="dfBuyBoxMax" placeholder="e.g. 100" /></div>
         <div class="filter-field"><label>Active Sellers Min</label><input type="number" id="dfSellersMin" value="5" /></div>
         <div class="filter-field"><label>Active Sellers Max</label><input type="number" id="dfSellersMax" value="55" /></div>
+        <div class="filter-field"><label>Amazon Buy Box Max %</label><input type="number" id="dfAmazonBuyBoxMax" placeholder="e.g. 25" /></div>
         <div class="filter-field"><label>Top Seller Buy Box Max %</label><input type="number" id="dfTopSellerMax" value="25" /></div>
         <div class="filter-field"><label>Min Monthly Sold</label><input type="number" id="dfMinMonthlySold" placeholder="e.g. 50" /></div>
         <div class="filter-field"><label>Max Weight (lbs)</label><input type="number" id="dfMaxWeight" placeholder="e.g. 3" /></div>
         <div class="filter-field"><label>Max Out-of-Stock %</label><input type="number" id="dfMaxOOS" placeholder="e.g. 20" /></div>
+        <div class="filter-field"><label>Root Category ID</label><input type="number" id="dfRootCategory" placeholder="optional" /></div>
         <div class="filter-field"><label># Results</label><input type="number" id="dfPerPage" value="30" max="100" /></div>
       </div>
       <div style="margin-top:14px;display:flex;align-items:center;gap:12px;">
@@ -789,12 +793,16 @@
     const filters = {
       salesRankMin: numOrNull("dfSalesRankMin"),
       salesRankMax: numOrNull("dfSalesRankMax"),
+      buyBoxMin: numOrNull("dfBuyBoxMin"),
+      buyBoxMax: numOrNull("dfBuyBoxMax"),
       sellersMin: numOrNull("dfSellersMin"),
       sellersMax: numOrNull("dfSellersMax"),
+      amazonBuyBoxPctMax: numOrNull("dfAmazonBuyBoxMax"),
       topSellerBuyBoxMax: numOrNull("dfTopSellerMax"),
       minMonthlySold: numOrNull("dfMinMonthlySold"),
       maxWeightLbs: numOrNull("dfMaxWeight"),
       maxOutOfStockPct: numOrNull("dfMaxOOS"),
+      rootCategory: numOrNull("dfRootCategory"),
       perPage: numOrNull("dfPerPage") || 30,
     };
 
@@ -806,7 +814,9 @@
       });
       const data = await res.json();
       if (!res.ok) {
-        showToast("Keepa search failed: " + (data.error || res.status));
+        const detail = data.detail ? " — " + JSON.stringify(data.detail).slice(0, 200) : "";
+        showToast("Keepa search failed: " + (data.error || res.status) + detail);
+        console.error("Keepa search error:", data);
         return;
       }
       discoverResultsCache = data.results || [];
