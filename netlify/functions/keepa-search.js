@@ -98,12 +98,22 @@ export async function handler(event) {
     }
 
     // Field names below are Keepa's documented product/stats object fields.
+    // Keepa uses negative numbers (e.g. -1, -2) as a "no data available"
+    // sentinel, not a real price - treating those as a literal price
+    // produces garbage like -$0.02. validPrice() rejects anything <= 0.
     // Defensive fallbacks throughout - a missing field shows as null/"—"
     // on the dashboard rather than breaking the whole search.
+    const validPrice = (raw) =>
+      typeof raw === "number" && raw > 0 ? +(raw / 100).toFixed(2) : null;
+
     const results = detailData.products.map((p) => ({
       asin: p.asin,
       title: p.title || "(no title)",
-      buyBoxPrice: p.stats?.buyBoxPrice != null ? +(p.stats.buyBoxPrice / 100).toFixed(2) : null,
+      // Prefer the actual Buy Box price; if Keepa has no current Buy Box
+      // (common when Amazon itself isn't in the box, or it's briefly
+      // unavailable), fall back to Amazon's own listed price rather than
+      // leaving it blank or writing a nonsense negative value.
+      buyBoxPrice: validPrice(p.stats?.buyBoxPrice) ?? validPrice(p.stats?.current?.[0]),
       salesRank: p.stats?.current?.[3] ?? p.salesRank ?? null,
       totalOfferCount: p.totalOfferCount ?? null,
       monthlySold: p.monthlySold ?? null,
