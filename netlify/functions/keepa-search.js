@@ -35,7 +35,12 @@ export async function handler(event) {
   // Map the dashboard's filter fields to Keepa's actual Product Finder
   // field names. Only include a filter if the person actually set a value -
   // an unset field should not restrict the search.
-  const selection = { perPage };
+  // Stopped trying to guess Keepa's exact perPage/page validation rule -
+  // two attempts at getting that combination right both failed with the
+  // same error. Simplest fix: don't send either field at all. Keepa
+  // returns its own (larger) default result set, and we just trim it down
+  // to what was actually requested ourselves, below.
+  const selection = {};
   if (filters.salesRankMin != null) selection.current_SALES_gte = filters.salesRankMin;
   if (filters.salesRankMax != null) selection.current_SALES_lte = filters.salesRankMax;
   if (filters.buyBoxMin != null) selection.current_BUY_BOX_SHIPPING_gte = Math.round(filters.buyBoxMin * 100);
