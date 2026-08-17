@@ -186,6 +186,11 @@ somewhere online than its current Amazon price - via a coupon code, an active sa
 or subscribe-and-save pricing. Search openly across the whole web using the exact
 product title, the way a shopper would - don't restrict yourself to any fixed list
 of sites. Check the first page of results; only dig further if nothing matches there.
+
+IMPORTANT - DO NOT NARRATE YOUR SEARCH PROCESS. Do not write out your reasoning,
+your search plan, or commentary on results as you go. Work through your searches
+silently. Produce text ONLY ONCE, at the very end, containing nothing but the
+final JSON object below - no other text before or after it, ever.
 ${brandInstruction}
 WATCH FOR THE BRAND'S OWN OFFICIAL WEBSITE. If a result's domain matches or closely
 resembles the product's own brand name (e.g. a product from "Graymatter" showing up
@@ -240,7 +245,7 @@ subscribe-and-save pricing where visible. Note if a deal looks time-limited.`;
 
   const response = await anthropic.messages.create({
     model: CLAUDE_MODEL,
-    max_tokens: 1000,
+    max_tokens: 2500,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
     tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearches }],
@@ -251,7 +256,13 @@ subscribe-and-save pricing where visible. Note if a deal looks time-limited.`;
     .map((b) => b.text)
     .join("\n");
 
-  const cleaned = textBlock.replace(/```json|```/g, "").trim();
+  let cleaned = textBlock.replace(/```json|```/g, "").trim();
+  // If the model added any commentary before/after the JSON despite being
+  // told not to, pull out just the {...} object rather than assuming the
+  // entire response is valid JSON on its own.
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (jsonMatch) cleaned = jsonMatch[0];
+
   try {
     const parsed = JSON.parse(cleaned);
     // Belt-and-suspenders: even if the model says found_cheaper, don't trust
@@ -286,7 +297,9 @@ subscribe-and-save pricing where visible. Note if a deal looks time-limited.`;
       source_link: null,
       deal_type: "none",
       confidence: "low",
-      notes: "Could not parse result - check manually. Raw: " + cleaned.slice(0, 200),
+      notes: cleaned.trim()
+        ? "Could not parse result - check manually. Raw: " + cleaned.slice(0, 200)
+        : "Model produced no final answer (likely ran out of response budget mid-search) - retry should help now that the token limit is higher.",
     };
   }
 }
