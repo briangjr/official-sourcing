@@ -191,6 +191,13 @@ IMPORTANT - DO NOT NARRATE YOUR SEARCH PROCESS. Do not write out your reasoning,
 your search plan, or commentary on results as you go. Work through your searches
 silently. Produce text ONLY ONCE, at the very end, containing nothing but the
 final JSON object below - no other text before or after it, ever.
+
+NEVER report a result that's on amazon.com (or any Amazon domain) itself - not
+Amazon's own Subscribe & Save price, not a different Amazon seller, not a related
+Amazon listing. The entire point is finding a genuinely different, external source
+to buy from and resell on Amazon - a discount on Amazon's own site isn't that,
+even if it's technically cheaper on paper. Only report sources from other retailers
+or the brand's own direct website.
 ${brandInstruction}
 WATCH FOR THE BRAND'S OWN OFFICIAL WEBSITE. If a result's domain matches or closely
 resembles the product's own brand name (e.g. a product from "Graymatter" showing up
@@ -282,11 +289,19 @@ subscribe-and-save pricing where visible. Note if a deal looks time-limited.`;
         !isNaN(amazonPriceNum) && parsed.best_price >= amazonPriceNum;
       const linkInvalid =
         !parsed.source_link || !/^https?:\/\//i.test(parsed.source_link);
-      if (priceInvalid || notActuallyCheaper || linkInvalid) {
+      // The whole point of this tool is finding a DIFFERENT, cheaper source
+      // to buy from and resell on Amazon - a result on amazon.com itself
+      // (e.g. Amazon's own Subscribe & Save vs. one-time price) isn't a
+      // real sourcing lead, even if it's genuinely cheaper on paper.
+      const isAmazonLink =
+        parsed.source_link && /amazon\.[a-z.]+\//i.test(parsed.source_link);
+      if (priceInvalid || notActuallyCheaper || linkInvalid || isAmazonLink) {
         parsed.found_cheaper = false;
         parsed.confidence = "low";
-        parsed.notes =
-          "Discarded failed sanity check (price/link invalid): " + (parsed.notes || "");
+        const reason = isAmazonLink
+          ? "Discarded: match was on Amazon itself, not an external source"
+          : "Discarded failed sanity check (price/link invalid)";
+        parsed.notes = reason + ": " + (parsed.notes || "");
       }
     }
     return parsed;
@@ -635,13 +650,16 @@ const MAX_RETRIES = 3;
       row.set("Vendor Tier", vendorTiers[domain] || "Unranked");
       row.set("Matched Brand Site", result.matched_brand_site === true ? "Yes" : "No");
 
-      // Second pass: if the search step found a promising lead (a coupon or
-      // sale, with an actual link to check), verify it with a real checkout
-      // pass rather than trusting the listed page price.
+      // Second pass: if the search step found a promising lead (a coupon,
+      // sale, or subscribe-and-save offer, with an actual link to check),
+      // verify it with a real checkout pass rather than trusting the
+      // listed page price.
       if (
         result.found_cheaper &&
         result.source_link &&
-        (result.deal_type === "coupon" || result.deal_type === "sale")
+        (result.deal_type === "coupon" ||
+          result.deal_type === "sale" ||
+          result.deal_type === "subscribe_and_save")
       ) {
         row.set("Checkout Notes", "Checking checkout price...");
         await row.save();
