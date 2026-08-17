@@ -163,31 +163,52 @@ fences - e.g. ["SAVE10","WELCOME15"]. If you find nothing credible, respond with
 // compare against a different Keepa column.
 const AMAZON_PRICE_COLUMN = "Buy Box: Current";
 
-async function findCheaperPrice(anthropic, row, trustedDomains = []) {
+async function findCheaperPrice(anthropic, row) {
   const title = row.get("Title");
   const amazonPrice = row.get(AMAZON_PRICE_COLUMN);
+  // Brand/Manufacturer already sits in every full Keepa export - feeding
+  // it directly means the model doesn't have to guess the brand from a
+  // messy, SEO-stuffed Amazon title.
+  const brand = row.get("Brand") || row.get("Manufacturer") || "";
 
-  const trustedSiteInstruction =
-    trustedDomains.length > 0
-      ? `\nSTEP 1 (do this first, but spend AT MOST ONE search on it - a single combined
-query like "site:${trustedDomains[0]} OR site:${trustedDomains[1] || trustedDomains[0]} ... <product title>",
-not one search per domain): try your trusted sites first: ${trustedDomains.join(", ")}.
-STEP 2: if step 1 finds nothing, use your remaining searches on open web search instead -
-don't burn your whole search budget on step 1 alone.
-A match from step 1 is more trustworthy - always prefer it over a step 2 result.\n`
-      : "";
+  const brandInstruction = brand
+    ? `\nKNOWN BRAND: "${brand}". Use this directly - don't guess the brand from the
+title. When searching, if your first search (the exact product title) doesn't turn
+up a clear match, try a second, simplified search using just the brand name plus
+the core product name (drop pack-size/serving-count/SEO filler words from the
+title) - brand websites often name things more simply than an Amazon listing does.\n`
+    : `\nNo brand/manufacturer was provided for this product - if you can identify
+the brand from the title itself, the same simplified-search approach applies: if
+the exact title doesn't find a match, try brand name + core product name.\n`;
 
   const systemPrompt = `You are checking whether a specific product can be bought cheaper
 somewhere online than its current Amazon price - via a coupon code, an active sale,
-or subscribe-and-save pricing. Search using the exact product title, the way a
-shopper would. Check the first page of results; only dig further if nothing
-matches there.
-${trustedSiteInstruction}
+or subscribe-and-save pricing. Search openly across the whole web using the exact
+product title, the way a shopper would - don't restrict yourself to any fixed list
+of sites. Check the first page of results; only dig further if nothing matches there.
+${brandInstruction}
+WATCH FOR THE BRAND'S OWN OFFICIAL WEBSITE. If a result's domain matches or closely
+resembles the product's own brand name (e.g. a product from "Graymatter" showing up
+on trygraymatter.com), that is a strong, trustworthy signal - brand direct-to-consumer
+sites often have automatic launch/first-order discounts and subscribe-and-save pricing
+that beats Amazon. Treat a genuine match on the brand's own site as high-confidence,
+similar to how you'd treat a match on a major, well-known retailer. Set
+"matched_brand_site" to true when this is the case.
+
+WATCH FOR AUTOMATIC FIRST-ORDER DISCOUNTS. Many direct-to-consumer brand websites
+show an automatic discount on a first/new-customer order (e.g. "50% off your first
+order", "welcome offer") right on the page, with no code required. This counts as
+deal_type "sale" - don't mistake it for something that needs a coupon code, and
+don't discard it just because you can't find an underlying code.
+
 BE STRICT ABOUT MATCHES. A wrong-but-similar product is worse than no match at all -
 it wastes the user's time and money if they buy it. Before reporting a price, confirm:
 - Same pack size / count / quantity (e.g. "24-pack" is NOT the same as "12-pack",
   a single unit is NOT the same as a multi-pack)
-- Same variant (size, color, flavor, model number) as the Amazon listing's title
+- Same variant (size, color, flavor, model number) as the Amazon listing's title -
+  a different brand name for a visibly identical product (e.g. a private-label
+  vs. the original brand) is NOT a match unless you can confirm it's the same
+  manufacturer/product, not just a similar-looking item
 - The price you're reporting is the actual current price on that page, not a
   crossed-out original price, a different seller's price, or a price from a
   different but similar listing
@@ -205,16 +226,17 @@ Respond with ONLY a JSON object, no other text, no code fences:
   "source_link": "url or null",
   "deal_type": "coupon" | "sale" | "subscribe_and_save" | "none",
   "confidence": "high" | "medium" | "low",
-  "matched_trusted_site": true or false,
+  "matched_brand_site": true or false,
   "notes": "short note - if exact_match is false, briefly say why (e.g. 'found similar item but different pack size')"
 }`;
 
   const userPrompt = `Product title: ${title}
 Current Amazon price: ${amazonPrice}
+${brand ? `Brand/Manufacturer: ${brand}` : ""}
 
 Find the cheapest legitimate current price for this exact product from any
-retailer, factoring in coupon codes and subscribe-and-save pricing where
-visible. Note if a deal looks time-limited.`;
+retailer, factoring in coupon codes, automatic first-order discounts, and
+subscribe-and-save pricing where visible. Note if a deal looks time-limited.`;
 
   const response = await anthropic.messages.create({
     model: CLAUDE_MODEL,
@@ -500,13 +522,10 @@ async function main() {
   const rows = await sheet.getRows();
   const knownCodes = await loadKnownCodes(doc);
   const vendorTiers = await loadVendorTiers(doc);
-  // S-tier only, and capped to 15 - a shorter, higher-confidence list is
-  // more likely to actually be followed by a cheaper model than a long
-  // one. Widen back to S+A later if S-tier alone proves reliable.
-  const trustedDomains = Object.entries(vendorTiers)
-    .filter(([, tier]) => tier === "S")
-    .map(([domain]) => domain)
-    .slice(0, 15);
+  // Vendor tiers are still used to score/rank leads after they're found
+  // (dashboard badges, confidence math) - just no longer used to restrict
+  // or steer the search itself. Search is fully open now; the model
+  // instead watches for a match on the product's own brand website.
   const archivedAsins = await loadArchivedAsins(doc);
 
   // Skip anything already checked in a prior batch (now archived) - mark
@@ -588,7 +607,7 @@ const MAX_RETRIES = 3;
     await row.save();
 
     try {
-      const result = await findCheaperPrice(anthropic, row, trustedDomains);
+      const result = await findCheaperPrice(anthropic, row);
 
       row.set("Status", "Done");
       row.set("Processed Date", today);
@@ -601,7 +620,7 @@ const MAX_RETRIES = 3;
 
       const domain = getDomain(result.source_link || "");
       row.set("Vendor Tier", vendorTiers[domain] || "Unranked");
-      row.set("Matched Trusted Site", result.matched_trusted_site === true ? "Yes" : "No");
+      row.set("Matched Brand Site", result.matched_brand_site === true ? "Yes" : "No");
 
       // Second pass: if the search step found a promising lead (a coupon or
       // sale, with an actual link to check), verify it with a real checkout
