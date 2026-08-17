@@ -41,8 +41,33 @@ async function findByText(page, patterns, selector = "button, a, input[type=subm
 }
 
 async function findPriceOnPage(page) {
-  // Prefer a price near "total" / "subtotal" text - much more likely to be
-  // the actual cart total than a random price elsewhere on the page.
+  // Priority 1: Subscribe & Save pricing - a specific, reliably-labeled
+  // pattern (Amazon and most DTC brands use near-identical wording), and
+  // often meaningfully cheaper than the one-time price. Checked first,
+  // ahead of the generic "total" heuristic below.
+  const subscribeMatch = await page.evaluate(() => {
+    const regex = /(subscribe\s*(&|and)?\s*save|subscription price|subscribe\s*(&|and)?\s*save\s*price)/i;
+    const priceRegex = /\$\s?\d{1,4}(?:\.\d{2})?/;
+    const all = Array.from(document.querySelectorAll("body *"));
+    for (const el of all) {
+      const text = el.textContent || "";
+      if (regex.test(text) && priceRegex.test(text) && text.length < 150) {
+        const m = text.match(priceRegex);
+        if (m) return m[0];
+      }
+    }
+    return null;
+  }).catch(() => null);
+
+  if (subscribeMatch) {
+    return {
+      price: parseFloat(subscribeMatch.replace(/[^0-9.]/g, "")),
+      method: "Subscribe & Save price",
+    };
+  }
+
+  // Priority 2: a price near "total" / "subtotal" text - much more likely
+  // to be the actual cart total than a random price elsewhere on the page.
   const totalMatch = await page.evaluate(() => {
     const regex = /(subtotal|order total|cart total|total)/i;
     const priceRegex = /\$\s?\d{1,4}(?:\.\d{2})?/;
@@ -58,16 +83,22 @@ async function findPriceOnPage(page) {
   }).catch(() => null);
 
   if (totalMatch) {
-    return parseFloat(totalMatch.replace(/[^0-9.]/g, ""));
+    return {
+      price: parseFloat(totalMatch.replace(/[^0-9.]/g, "")),
+      method: "Total/subtotal on page",
+    };
   }
 
-  // Fallback: rough heuristic - smallest dollar-looking amount on the page.
-  // Best-effort only; not reliable on every layout.
+  // Priority 3 (fallback): rough heuristic - smallest dollar-looking amount
+  // on the page. Best-effort only; not reliable on every layout.
   const text = await page.locator("body").innerText().catch(() => "");
   const matches = text.match(/\$\s?\d{1,4}(?:\.\d{2})?/g);
-  if (!matches || matches.length === 0) return null;
+  if (!matches || matches.length === 0) return { price: null, method: null };
   const values = matches.map((m) => parseFloat(m.replace(/[^0-9.]/g, "")));
-  return Math.min(...values.filter((v) => v > 0));
+  return {
+    price: Math.min(...values.filter((v) => v > 0)),
+    method: "Fallback: smallest price found on page (unverified)",
+  };
 }
 
 const QUANTITY = 3; // test bulk-of-3 pricing, then divide the total back to a per-unit price
@@ -199,8 +230,9 @@ export async function checkCheckoutPrice(url, knownCodes = [], shipZip = "") {
 
     if (!matchedField) {
       const zipNote = result.zip_applied ? " Shipping estimate applied via ZIP." : "";
-      result.notes = "Reached cart, but no coupon/promo code field found on this site." + zipNote;
       recordPrice(result, await findPriceOnPage(page));
+      const methodNote = result.price_method ? ` Price via: ${result.price_method}.` : "";
+      result.notes = "Reached cart, but no coupon/promo code field found on this site." + zipNote + methodNote;
       return result;
     }
 
@@ -208,10 +240,11 @@ export async function checkCheckoutPrice(url, knownCodes = [], shipZip = "") {
 
     if (knownCodes.length === 0) {
       const zipNote = result.zip_applied ? " Shipping estimate applied via ZIP." : "";
+      recordPrice(result, await findPriceOnPage(page));
+      const methodNote = result.price_method ? ` Price via: ${result.price_method}.` : "";
       result.notes =
         "Coupon field found, but no known codes were supplied to try. Add codes to the CouponCodes sheet tab." +
-        zipNote;
-      recordPrice(result, await findPriceOnPage(page));
+        zipNote + methodNote;
       return result;
     }
 
@@ -227,7 +260,8 @@ export async function checkCheckoutPrice(url, knownCodes = [], shipZip = "") {
 
     recordPrice(result, await findPriceOnPage(page));
     const zipNote = result.zip_applied ? " Shipping estimate applied via ZIP." : "";
-    result.notes = `Tried ${result.codes_tried.length} code(s) on ${QUANTITY} units: ${result.codes_tried.join(", ")}.${zipNote}`;
+    const methodNote = result.price_method ? ` Price via: ${result.price_method}.` : "";
+    result.notes = `Tried ${result.codes_tried.length} code(s) on ${QUANTITY} units: ${result.codes_tried.join(", ")}.${zipNote}${methodNote}`;
     return result;
   } catch (err) {
     result.notes = "Checkout check failed: " + err.message;
@@ -237,11 +271,13 @@ export async function checkCheckoutPrice(url, knownCodes = [], shipZip = "") {
   }
 }
 
-// Stores the raw total found on the page, and the per-unit price after
+// Stores the raw total found on the page, the per-unit price after
 // dividing by the tested quantity (3) - this is the number that's actually
-// comparable to Amazon's single-unit listing price.
-function recordPrice(result, totalPrice) {
-  if (totalPrice == null) return;
-  result.verified_total_price = totalPrice;
-  result.verified_price = +(totalPrice / QUANTITY).toFixed(2);
+// comparable to Amazon's single-unit listing price - and which detection
+// method found it, for transparency in Checkout Notes.
+function recordPrice(result, priceResult) {
+  if (!priceResult || priceResult.price == null) return;
+  result.verified_total_price = priceResult.price;
+  result.verified_price = +(priceResult.price / QUANTITY).toFixed(2);
+  result.price_method = priceResult.method;
 }
