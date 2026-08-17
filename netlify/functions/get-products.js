@@ -117,6 +117,7 @@ export async function handler(event) {
           roiPercent,
           vendorTier: vendorTier || "Unranked",
           confidence: (r.get("Confidence") || "low").toLowerCase(),
+          notes: r.get("Notes") || r.get("Checkout Notes") || "",
           score,
           salesRank: r.get("Sales Rank: Current") || "",
           vendor: r.get("Deal Type") || "",
